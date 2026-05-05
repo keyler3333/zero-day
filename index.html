@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SERF/X</title>
+    <style>
+        :root {
+            --tab-height: 36px;
+            --bar-bg: #f1f3f4;
+            --border: #dadce0;
+            --active-tab-bg: #fff;
+            --text: #202124;
+            --text-secondary: #5f6368;
+            --blue: #1a73e8;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fff; color: var(--text);
+            display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+        }
+        #tab-strip {
+            display: flex; align-items: center;
+            background: var(--bar-bg);
+            border-bottom: 1px solid var(--border);
+            height: var(--tab-height);
+            padding: 0 8px;
+            user-select: none;
+        }
+        #tabs {
+            display: flex; flex: 1; overflow-x: auto; gap: 2px;
+            height: 100%; align-items: flex-end;
+        }
+        #tabs::-webkit-scrollbar { height: 2px; }
+        #tabs::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 2px; }
+        .tab {
+            display: flex; align-items: center;
+            padding: 0 12px; height: 32px;
+            border-radius: 8px 8px 0 0;
+            background: #edefef; border: 1px solid var(--border); border-bottom: none;
+            cursor: pointer; font-size: 12px; color: var(--text-secondary);
+            min-width: 80px; max-width: 140px;
+            flex-shrink: 0; overflow: hidden; white-space: nowrap;
+        }
+        .tab.active {
+            background: var(--active-tab-bg); color: var(--text);
+            border-bottom: 2px solid var(--blue); height: 33px; font-weight: 500;
+        }
+        .tab .title {
+            flex: 1; text-overflow: ellipsis; overflow: hidden; text-align: center;
+        }
+        .tab .close {
+            margin-left: 6px; width: 16px; height: 16px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 10px; color: var(--text-secondary); visibility: hidden;
+        }
+        .tab:hover .close { visibility: visible; }
+        .close:hover { background: #dadce0; color: #000; }
+        #new-tab-btn {
+            width: 28px; height: 28px; border-radius: 50%; border: none;
+            background: transparent; color: var(--text-secondary); font-size: 18px;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            margin-left: 4px; flex-shrink: 0;
+        }
+        #new-tab-btn:hover { background: #e8eaed; }
+        #navbar {
+            display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+            border-bottom: 1px solid var(--border); background: #fff;
+        }
+        #url-input {
+            flex: 1; padding: 6px 12px; font-size: 14px;
+            border: 1px solid var(--border); border-radius: 20px;
+            outline: none; color: var(--text); background: #f8f9fa;
+            transition: border-color 0.2s;
+        }
+        #url-input:focus { border-color: var(--blue); background: #fff; }
+        .nav-btn {
+            background: transparent; border: none; padding: 6px; border-radius: 50%;
+            cursor: pointer; color: var(--text-secondary); display: flex;
+        }
+        .nav-btn:hover { background: #f1f3f4; }
+        #browser-area {
+            flex: 1; position: relative; background: #fff;
+        }
+        iframe {
+            width: 100%; height: 100%; border: none; background: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div id="tab-strip">
+        <div id="tabs"></div>
+        <button id="new-tab-btn">+</button>
+    </div>
+    <div id="navbar">
+        <button class="nav-btn" id="back-btn" title="Back">
+            <svg width="18" height="18" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+        </button>
+        <button class="nav-btn" id="fwd-btn" title="Forward">
+            <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
+        </button>
+        <button class="nav-btn" id="reload-btn" title="Reload">
+            <svg width="18" height="18" viewBox="0 0 24 24"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+        </button>
+        <input type="text" id="url-input" placeholder="Search or enter URL">
+    </div>
+    <div id="browser-area">
+        <iframe id="content-frame" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals allow-orientation-lock allow-pointer-lock allow-presentation"></iframe>
+    </div>
+
+    <script src="sw-register.js"></script>
+    <script>
+        const WORKER_URL = 'https://your-worker.workers.dev'; // Replace with your Cloudflare Worker URL
+
+        class Tab {
+            constructor(id, title, url) {
+                this.id = id;
+                this.title = title || 'New Tab';
+                this.url = url || '';
+            }
+        }
+
+        let tabs = [];
+        let activeTabId = null;
+        const tabsDiv = document.getElementById('tabs');
+        const urlInput = document.getElementById('url-input');
+        const frame = document.getElementById('content-frame');
+        const backBtn = document.getElementById('back-btn');
+        const fwdBtn = document.getElementById('fwd-btn');
+        const reloadBtn = document.getElementById('reload-btn');
+        const newTabBtn = document.getElementById('new-tab-btn');
+
+        function genId() {
+            return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+        }
+
+        function createTab(title, url) {
+            const id = genId();
+            const tab = new Tab(id, title, url);
+            tabs.push(tab);
+            if (tabs.length === 1) activeTabId = id;
+            render();
+            if (url) navigate(url);
+            return tab;
+        }
+
+        function closeTab(id) {
+            if (tabs.length <= 1) return;
+            const idx = tabs.findIndex(t => t.id === id);
+            if (idx === -1) return;
+            tabs.splice(idx, 1);
+            if (activeTabId === id) {
+                const newIdx = Math.min(idx, tabs.length - 1);
+                activeTabId = tabs[newIdx]?.id || null;
+            }
+            render();
+        }
+
+        function switchToTab(id) {
+            if (activeTabId === id) return;
+            const tab = tabs.find(t => t.id === id);
+            if (!tab) return;
+            activeTabId = id;
+            render();
+            navigate(tab.url);
+        }
+
+        function getActiveTab() {
+            return tabs.find(t => t.id === activeTabId);
+        }
+
+        function render() {
+            tabsDiv.innerHTML = '';
+            tabs.forEach(tab => {
+                const div = document.createElement('div');
+                div.className = 'tab' + (tab.id === activeTabId ? ' active' : '');
+                div.innerHTML = `<span class="title">${escapeHtml(tab.title)}</span><span class="close">&times;</span>`;
+                div.querySelector('.title').onclick = () => switchToTab(tab.id);
+                div.querySelector('.close').onclick = (e) => { e.stopPropagation(); closeTab(tab.id); };
+                tabsDiv.appendChild(div);
+            });
+            const active = getActiveTab();
+            if (active) {
+                urlInput.value = active.url;
+            }
+        }
+
+        function navigate(rawUrl) {
+            if (!rawUrl) return;
+            const active = getActiveTab();
+            if (!active) return;
+            let url = rawUrl.trim();
+            if (!/^https?:\/\//i.test(url)) {
+                if (url.includes('.') && !url.includes(' ')) {
+                    url = 'https://' + url;
+                } else {
+                    url = 'https://www.google.com/search?q=' + encodeURIComponent(url);
+                }
+            }
+            const proxyUrl = WORKER_URL + '/proxy?url=' + encodeURIComponent(url);
+            frame.src = proxyUrl;
+            active.url = url;
+            active.title = url.replace(/^https?:\/\//, '').split('/')[0];
+            render();
+            urlInput.value = url;
+        }
+
+        function escapeHtml(text) {
+            return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        urlInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                navigate(urlInput.value);
+            }
+        });
+
+        backBtn.addEventListener('click', () => {
+            if (frame.contentWindow) frame.contentWindow.history.back();
+        });
+        fwdBtn.addEventListener('click', () => {
+            if (frame.contentWindow) frame.contentWindow.history.forward();
+        });
+        reloadBtn.addEventListener('click', () => {
+            frame.src = frame.src;
+        });
+
+        newTabBtn.addEventListener('click', () => {
+            const tab = createTab('New Tab', '');
+            activeTabId = tab.id;
+            render();
+            frame.src = 'about:blank';
+            urlInput.value = '';
+            urlInput.focus();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 't') {
+                e.preventDefault();
+                newTabBtn.click();
+            }
+            if (e.ctrlKey && e.key === 'w') {
+                e.preventDefault();
+                const active = getActiveTab();
+                if (active) closeTab(active.id);
+            }
+            if (e.ctrlKey && e.key === 'l') {
+                e.preventDefault();
+                urlInput.select();
+            }
+        });
+
+        const starter = createTab('New Tab', 'https://www.google.com');
+        activeTabId = starter.id;
+        render();
+    </script>
+</body>
+</html>
