@@ -1,10 +1,13 @@
 {
   "name": "serfx-crawler",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "scripts": {
-    "crawl": "node crawler.js"
+    "crawl": "node crawler.js",
+    "pagerank": "node pagerank.js",
+    "build": "node crawler.js && node pagerank.js"
   },
   "dependencies": {
+    "better-sqlite3": "^9.4.3",
     "cheerio": "^1.0.0-rc.12",
     "node-fetch": "^2.7.0"
   }
