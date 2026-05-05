@@ -1,0 +1,7 @@
+{
+  "name": "serfx-api",
+  "version": "1.0.0",
+  "dependencies": {
+    "linkedom": "^0.16.0"
+  }
+}
