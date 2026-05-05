@@ -119,7 +119,6 @@
             border-bottom: 1px solid var(--border); overflow-x: auto; gap: 4px;
             align-items: center; height: 32px;
         }
-        .bookmark-bar::-webkit-scrollbar { height:2px; }
         .bookmark-btn {
             background: transparent; border: none; padding: 2px 8px; font-size: 12px;
             cursor: pointer; border-radius: 4px; white-space: nowrap; color: var(--text2);
@@ -199,14 +198,14 @@
         <div class="setting-group">
             <label>Search engine</label>
             <select id="setting-search-engine">
-                <option value="duckduckgo">DuckDuckGo</option>
-                <option value="brave">Brave</option>
-                <option value="custom">Custom</option>
+                <option value="self">Self-Hosted (DuckDuckGo)</option>
+                <option value="custom">Custom API</option>
             </select>
+            <div class="hint">"Self-Hosted" uses your own proxy (no external server needed).</div>
         </div>
         <div class="setting-group" id="custom-search-group" style="display:none;">
             <label>Custom search URL <span class="hint">Use <code>%s</code> for query</span></label>
-            <input type="text" id="custom-search-url" placeholder="https://serfx-api.vercel.app/api/search?q=%s">
+            <input type="text" id="custom-search-url" placeholder="https://my-api.com/search?q=%s">
         </div>
         <div class="setting-group">
             <label>Proxy mode</label>
@@ -215,6 +214,7 @@
                 <option value="sw">Service Worker proxy</option>
                 <option value="external">External proxy URL</option>
             </select>
+            <div class="hint">For inline browsing, use SW proxy.</div>
         </div>
         <div class="setting-group" id="external-proxy-group" style="display:none;">
             <label>External proxy URL</label>
@@ -244,14 +244,9 @@
     </div>
 
     <script>
-        const ENGINES = {
-            duckduckgo: { name: 'DuckDuckGo', url: 'https://duckduckgo.com/?q=' },
-            brave: { name: 'Brave', url: 'https://search.brave.com/search?q=' }
-        };
-
         let settings = {
-            searchEngine: 'duckduckgo',
-            customSearchUrl: 'https://serfx-api.vercel.app/api/search?q=%s',
+            searchEngine: 'self',
+            customSearchUrl: '',
             proxyMode: 'none',
             externalProxyUrl: '',
             homepage: 'https://duckduckgo.com',
@@ -299,7 +294,7 @@
         const closeSettingsBtn = document.getElementById('close-settings');
         const findBar = document.getElementById('find-bar');
         const findInput = document.getElementById('find-input');
-        const findCount = document.getElementById('find-count');
+        const findCountSpan = document.getElementById('find-count');
 
         function genId() {
             return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
@@ -386,7 +381,38 @@
             return target;
         }
 
-        async function fetchApiResults(query) {
+        async function fetchSelfHostedResults(query) {
+            const duckUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+            let html;
+            try {
+                const resp = await fetch(buildProxyUrl(duckUrl));
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                html = await resp.text();
+            } catch (e) {
+                return { error: e.message };
+            }
+            if (!html) return { error: 'No response' };
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const results = [];
+            doc.querySelectorAll('.result').forEach(el => {
+                const titleEl = el.querySelector('.result__title');
+                const snippetEl = el.querySelector('.result__snippet');
+                const urlEl = el.querySelector('.result__url');
+                const link = titleEl?.querySelector('a')?.getAttribute('href');
+                if (titleEl && snippetEl) {
+                    results.push({
+                        title: titleEl.textContent.trim(),
+                        snippet: snippetEl.textContent.trim(),
+                        url: link || '',
+                        displayUrl: urlEl ? urlEl.textContent.trim() : (link || '')
+                    });
+                }
+            });
+            return { engine: 'DuckDuckGo (Self-Hosted)', results: results.slice(0, 10) };
+        }
+
+        async function fetchCustomResults(query) {
             const url = settings.customSearchUrl.replace('%s', encodeURIComponent(query));
             try {
                 const resp = await fetch(url);
@@ -397,7 +423,7 @@
             }
         }
 
-        function renderResults(data) {
+        function displaySearchResults(data) {
             showResults();
             if (data.error) {
                 resultsPanel.innerHTML = `<div class="message-placeholder">Error: ${escapeHtml(data.error)}</div>`;
@@ -425,25 +451,27 @@
             const active = getActiveTab();
             if (!active) return;
             let url = rawUrl.trim();
+
             if (!isUrl(url)) {
+                active.url = url;
+                active.title = url;
+                urlInput.value = url;
+                renderTabs();
+                hideResults();
+                resultsPanel.innerHTML = '<div class="message-placeholder">Searching...</div>';
+                showResults();
+
+                let data;
                 if (settings.searchEngine === 'custom' && settings.customSearchUrl) {
-                    hideResults();
-                    resultsPanel.innerHTML = '<div class="message-placeholder">Searching...</div>';
-                    showResults();
-                    const data = await fetchApiResults(url);
-                    active.url = settings.customSearchUrl.replace('%s', encodeURIComponent(url));
-                    active.title = url;
-                    urlInput.value = url;
-                    renderTabs();
-                    renderResults(data);
-                    return;
+                    data = await fetchCustomResults(url);
                 } else {
-                    const engine = ENGINES[settings.searchEngine] || ENGINES.duckduckgo;
-                    url = engine.url + encodeURIComponent(url);
+                    data = await fetchSelfHostedResults(url);
                 }
-            } else if (!/^https?:\/\//i.test(url)) {
-                url = 'https://' + url;
+                displaySearchResults(data);
+                return;
             }
+
+            if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
 
             active.url = url;
             active.title = url.replace(/^https?:\/\//, '').split('/')[0];
