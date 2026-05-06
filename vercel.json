@@ -1,4 +1,5 @@
 {
-  "outputDirectory": ".",
-  "buildCommand": "node crawler.js && node pagerank.js"
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
