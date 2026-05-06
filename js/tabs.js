@@ -4,17 +4,15 @@ import { addPage } from './engine.js';
 let tabs = [];
 let activeTabId = null;
 let closedStack = [];
-let historyList = [];
-let bookmarks = [];
-try { historyList = JSON.parse(localStorage.getItem('serfx_hist') || '[]'); } catch(e) {}
-try { bookmarks = JSON.parse(localStorage.getItem('serfx_bm') || '[]'); } catch(e) {}
+let tabIdCounter = 0;
+
+const frame = document.getElementById('content-frame');
+const urlInput = document.getElementById('url-input');
+const speedDial = document.getElementById('speed-dial');
+const resultsPanel = document.getElementById('results-panel');
 
 let cfg = { proxy: 'none', proxyUrl: '', newtabFocus: true, autocrawl: true };
 try { const s = JSON.parse(localStorage.getItem('serfx_cfg')); if (s) Object.assign(cfg, s); } catch(e) {}
-
-let tabIdCounter = 0;
-const frame = document.getElementById('content-frame');
-const urlInput = document.getElementById('url-input');
 
 function isUrl(s) {
     return /^https?:\/\//i.test(s) || (s.includes('.') && !s.includes(' ') && s.length < 200);
@@ -49,10 +47,11 @@ function updateNavButtons(tab) {
 
 function showSpeedDial() {
     frame.style.display = 'none';
-    document.getElementById('results-panel').style.display = 'none';
-    document.getElementById('speed-dial').classList.add('visible');
+    resultsPanel.style.display = 'none';
+    speedDial.classList.add('visible');
 }
-function hideSpeedDial() { document.getElementById('speed-dial').classList.remove('visible'); }
+
+function hideSpeedDial() { speedDial.classList.remove('visible'); }
 
 export function getActiveTab() { return tabs.find(t => t.id === activeTabId); }
 
@@ -67,7 +66,7 @@ export function createTab(title, url, activate = true) {
     return id;
 }
 
-function closeTab(id) {
+export function closeTab(id) {
     if (tabs.length <= 1) return;
     const idx = tabs.findIndex(t => t.id === id);
     if (idx < 0) return;
@@ -99,11 +98,36 @@ export function goBack() {
     tab.historyIndex--;
     navigate(tab.history[tab.historyIndex].url, tab.id, false);
 }
+
 export function goForward() {
     const tab = getActiveTab();
     if (!tab || tab.historyIndex >= tab.history.length - 1) return;
     tab.historyIndex++;
     navigate(tab.history[tab.historyIndex].url, tab.id, false);
+}
+
+function showResultsPanel(query, data) {
+    hideSpeedDial();
+    frame.style.display = 'none';
+    resultsPanel.style.display = 'block';
+    let html = `<div class="res-header">${data.results.length} results</div>`;
+    html += `<div class="res-query">${escHtml(query)}</div>`;
+    if (data.results.length === 0) {
+        html += `<div class="res-empty"><strong>No results</strong></div>`;
+    } else {
+        const tokens = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length > 1);
+        data.results.forEach(r => {
+            let domain = '';
+            try { domain = new URL(r.url).hostname; } catch {}
+            html += `<div class="res-item">
+                <a class="res-title" href="${escHtml(r.url)}" target="_blank" rel="noopener">${escHtml(r.title || r.url)}</a>
+                <div class="res-url">${domain ? `<img src="${getFaviconUrl(domain)}">` : ''}${escHtml(r.url)}</div>
+                <div class="res-snippet">${escHtml((r.text || '').substring(0, 240))}</div>
+                <div class="res-score">score ${r.score} · ${escHtml(domain)}</div>
+            </div>`;
+        });
+    }
+    resultsPanel.innerHTML = html;
 }
 
 export async function navigate(raw, tabId, pushHistory = true) {
@@ -119,8 +143,8 @@ export async function navigate(raw, tabId, pushHistory = true) {
         urlInput.value = url;
         renderTabs();
         await initSearch();
-        const results = search(url);
-        showResultsPanel(url, results);
+        const data = search(url);
+        showResultsPanel(url, data);
         return;
     }
 
@@ -138,7 +162,7 @@ export async function navigate(raw, tabId, pushHistory = true) {
     renderTabs();
     urlInput.value = fullUrl;
     hideSpeedDial();
-    document.getElementById('results-panel').style.display = 'none';
+    resultsPanel.style.display = 'none';
 
     if (cfg.proxy === 'none') {
         window.open(fullUrl, '_blank', 'noopener,noreferrer');
@@ -162,31 +186,6 @@ export async function navigate(raw, tabId, pushHistory = true) {
             addPage(fullUrl, title, body, []);
         }
     }
-}
-
-function showResultsPanel(query, data) {
-    hideSpeedDial();
-    frame.style.display = 'none';
-    const panel = document.getElementById('results-panel');
-    panel.style.display = 'block';
-    let html = `<div class="res-header">${data.results.length} results</div>`;
-    html += `<div class="res-query">${escHtml(query)}</div>`;
-    if (data.results.length === 0) {
-        html += `<div class="res-empty"><strong>No results</strong></div>`;
-    } else {
-        const tokens = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length > 1);
-        data.results.forEach(r => {
-            let domain = '';
-            try { domain = new URL(r.url).hostname; } catch {}
-            html += `<div class="res-item">
-                <a class="res-title" href="${escHtml(r.url)}" target="_blank" rel="noopener">${escHtml(r.title || r.url)}</a>
-                <div class="res-url">${domain ? `<img src="${getFaviconUrl(domain)}">` : ''}${escHtml(r.url)}</div>
-                <div class="res-snippet">${escHtml((r.text || '').substring(0, 240))}</div>
-                <div class="res-score">score ${r.score} · ${escHtml(domain)}</div>
-            </div>`;
-        });
-    }
-    panel.innerHTML = html;
 }
 
 createTab('New Tab', '');
