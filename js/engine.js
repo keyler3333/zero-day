@@ -1,5 +1,3 @@
-import { Storage } from './storage.js';
-
 const DB_NAME = 'serfx_index';
 let db;
 
@@ -25,9 +23,7 @@ async function loadFromJSON() {
         if (!db) await openDB();
         const tx = db.transaction('pages', 'readwrite');
         const store = tx.objectStore('pages');
-        data.forEach(doc => {
-            store.put(doc);
-        });
+        data.forEach(doc => store.put(doc));
         return new Promise(r => { tx.oncomplete = r; });
     } catch {}
 }
