@@ -1,16 +1,7 @@
 {
-    "name": "SERF/X",
-    "short_name": "SERF/X",
-    "description": "Private browser with built-in search engine",
-    "start_url": "/",
-    "display": "standalone",
-    "background_color": "#ffffff",
-    "theme_color": "#ffffff",
-    "icons": [
-        {
-            "src": "assets/icons/icon.svg",
-            "sizes": "any",
-            "type": "image/svg+xml"
-        }
-    ]
+  "name": "SERF/X",
+  "short_name": "SERFX",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "theme_color": "#e8401c"
 }
