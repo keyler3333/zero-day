@@ -1,5 +1,5 @@
 import { initEngine } from './engine.js';
-import { navigate } from './tabs.js';
+import { navigate, createTab, getActiveTab, goBack, goForward } from './tabs.js';
 import { initUI } from './ui.js';
 import { initKeyboard } from './keyboard.js';
 import { initPanels } from './panels.js';
@@ -9,35 +9,41 @@ async function init() {
     initUI();
     initKeyboard();
     initPanels();
+
+    const urlInput = document.getElementById('url-input');
+    const sdInput = document.getElementById('sd-search-input');
+    const clearBtn = document.getElementById('url-clear');
+    const frame = document.getElementById('content-frame');
+
     document.getElementById('sd-search-go-btn').addEventListener('click', () => {
-        const q = document.getElementById('sd-search-input').value.trim();
+        const q = sdInput.value.trim();
         if (q) {
-            document.getElementById('sd-search-input').value = '';
+            sdInput.value = '';
             navigate(q);
         }
     });
+
     document.getElementById('new-tab-btn').addEventListener('click', () => {
-        import('./tabs.js').then(m => m.createTab('New Tab', ''));
+        createTab('New Tab', '');
     });
-    document.getElementById('back-btn').addEventListener('click', () => {
-        import('./tabs.js').then(m => m.goBack());
-    });
-    document.getElementById('fwd-btn').addEventListener('click', () => {
-        import('./tabs.js').then(m => m.goForward());
-    });
+
+    document.getElementById('back-btn').addEventListener('click', goBack);
+    document.getElementById('fwd-btn').addEventListener('click', goForward);
+
     document.getElementById('reload-btn').addEventListener('click', () => {
-        const frame = document.getElementById('content-frame');
         if (frame.src && frame.src !== location.href) frame.src = frame.src;
     });
-    document.getElementById('url-input').addEventListener('keydown', e => {
+
+    urlInput.addEventListener('keydown', e => {
         if (e.key === 'Enter') navigate(e.target.value.trim());
     });
-    document.getElementById('url-clear').addEventListener('click', () => {
-        const inp = document.getElementById('url-input');
-        inp.value = '';
-        inp.focus();
+
+    clearBtn.addEventListener('click', () => {
+        urlInput.value = '';
+        urlInput.focus();
     });
-    document.getElementById('sd-search-input').addEventListener('keydown', e => {
+
+    sdInput.addEventListener('keydown', e => {
         if (e.key === 'Enter') {
             const q = e.target.value.trim();
             if (q) {
