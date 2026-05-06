@@ -1,4 +1,4 @@
-import { getActiveTab, createTab, goBack, goForward } from './tabs.js';
+import { getActiveTab, createTab, goBack, goForward, closeTab } from './tabs.js';
 
 export function initKeyboard() {
     let zoomLevel = 1;
@@ -8,7 +8,7 @@ export function initKeyboard() {
     document.addEventListener('keydown', e => {
         if (e.ctrlKey) {
             if (e.key === 't') { e.preventDefault(); createTab('New Tab', ''); }
-            else if (e.key === 'w') { e.preventDefault(); const t = getActiveTab(); if (t) import('./tabs.js').then(m => m.closeTab(t.id)); }
+            else if (e.key === 'w') { e.preventDefault(); const t = getActiveTab(); if (t) closeTab(t.id); }
             else if (e.key === 'l' || e.key === 'k') { e.preventDefault(); urlInput.select(); urlInput.focus(); }
             else if (e.key === 'f') { e.preventDefault(); document.getElementById('find-open-btn').click(); }
             else if (e.key === 'r') { e.preventDefault(); document.getElementById('reload-btn').click(); }
