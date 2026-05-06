@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SERF/X</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="assets/icons/icon.svg">
     <style>
         :root {
             --bg: #ffffff;
@@ -143,22 +145,22 @@
         .setting-group input[type="checkbox"] { margin-right: 8px; }
         .setting-group .hint { font-size: 11px; color: var(--text2); margin-top: 4px; }
         .setting-group .hint code { background: var(--hover); padding: 2px 4px; border-radius: 4px; }
-        #close-settings {
-            float: right; background: none; border: none; font-size: 20px; cursor: pointer;
-            color: var(--text2);
-        }
+        #close-settings { float: right; background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text2); }
         .find-bar {
             position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
             background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: none; align-items: center;
             padding: 6px 12px; gap: 8px; z-index: 1001;
         }
-        .find-bar input { background: var(--bar-bg); border: 1px solid var(--border); border-radius: 8px;
-            padding: 4px 8px; color: var(--text); outline: none; font-size: 13px; width: 180px;
-        }
+        .find-bar input { background: var(--bar-bg); border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; color: var(--text); outline: none; font-size: 13px; width: 180px; }
         .find-bar button { background: transparent; border: none; cursor: pointer; color: var(--text2); font-size: 14px; }
         .find-bar button:hover { color: var(--text); }
         .find-bar span { color: var(--text2); font-size: 12px; }
+        .crawl-status {
+            position: fixed; bottom: 60px; right: 20px; background: var(--bg); border: 1px solid var(--border);
+            border-radius: 8px; padding: 8px 14px; font-size: 12px; color: var(--text2); z-index: 999;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -193,20 +195,25 @@
         <iframe id="content-frame" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals allow-orientation-lock allow-pointer-lock allow-presentation"></iframe>
         <div id="results-panel"></div>
     </div>
+    <div class="crawl-status" id="crawl-status"></div>
     <div class="settings-panel" id="settings-panel">
         <button id="close-settings">&times;</button>
         <h2>Settings</h2>
         <div class="setting-group">
             <label>Search engine</label>
             <select id="setting-search-engine">
-                <option value="self">Self-Hosted Index</option>
+                <option value="self">Self-Hosted Index (auto-crawling)</option>
                 <option value="custom">Custom API</option>
             </select>
-            <div class="hint">Uses local search‑index.json (built by crawler.js)</div>
+            <div class="hint">Crawls and indexes pages automatically in your browser.</div>
         </div>
         <div class="setting-group" id="custom-search-group" style="display:none;">
             <label>Custom search URL <span class="hint">Use <code>%s</code> for query</span></label>
             <input type="text" id="custom-search-url" placeholder="https://my-api.com/search?q=%s">
+        </div>
+        <div class="setting-group">
+            <button id="start-crawl-btn" style="width:100%; padding:10px; background:var(--blue); color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:14px;">Start Crawling</button>
+            <div class="hint">Adds pages to your search index. Progress saved automatically.</div>
         </div>
         <div class="setting-group">
             <label>Proxy mode</label>
@@ -215,7 +222,6 @@
                 <option value="sw">Service Worker proxy</option>
                 <option value="external">External proxy URL</option>
             </select>
-            <div class="hint">For inline browsing, use SW proxy.</div>
         </div>
         <div class="setting-group" id="external-proxy-group" style="display:none;">
             <label>External proxy URL</label>
@@ -236,15 +242,197 @@
             <label><input type="checkbox" id="setting-newtab-focus"> Focus address bar on new tab</label>
         </div>
     </div>
-    <div class="find-bar" id="find-bar">
-        <input type="text" id="find-input" placeholder="Find on page...">
-        <span id="find-count">0/0</span>
-        <button id="find-next">▼</button>
-        <button id="find-prev">▲</button>
-        <button id="find-close">✕</button>
-    </div>
 
-    <script>
+    <script type="module">
+        import { SearchEngine } from './search.js';
+
+        window._searchEngine = new SearchEngine();
+        window._searchEngine.load();
+
+        const CRAWL_STORE_KEY = 'serfx_crawl_state';
+
+        class BrowserCrawler {
+            constructor(engine) {
+                this.engine = engine;
+                this.queue = [];
+                this.visited = new Set();
+                this.running = false;
+                this.politeness = 800;
+                this.maxPages = 500;
+                this.crawledCount = 0;
+                this.loadState();
+            }
+
+            loadState() {
+                try {
+                    const saved = localStorage.getItem(CRAWL_STORE_KEY);
+                    if (saved) {
+                        const state = JSON.parse(saved);
+                        this.queue = state.queue || [];
+                        this.visited = new Set(state.visited || []);
+                        this.crawledCount = state.crawledCount || 0;
+                    }
+                } catch (e) {}
+                if (!this.queue.length) {
+                    this.queue.push(
+                        { url: 'https://en.wikipedia.org/wiki/Search_engine', depth: 0 },
+                        { url: 'https://developer.mozilla.org', depth: 0 }
+                    );
+                }
+            }
+
+            saveState() {
+                localStorage.setItem(CRAWL_STORE_KEY, JSON.stringify({
+                    queue: this.queue.slice(0, 200),
+                    visited: [...this.visited].slice(0, 10000),
+                    crawledCount: this.crawledCount
+                }));
+            }
+
+            async fetchRobotsTxt(domain, protocol) {
+                try {
+                    const resp = await fetch(`${protocol}//${domain}/robots.txt`, { signal: AbortSignal.timeout(4000) });
+                    const text = await resp.text();
+                    const disallowed = [];
+                    let inBlock = false;
+                    for (const line of text.split('\n')) {
+                        const trimmed = line.trim();
+                        if (/^user-agent:\s*\*/i.test(trimmed)) inBlock = true;
+                        else if (/^user-agent:/i.test(trimmed)) inBlock = false;
+                        else if (inBlock && /^disallow:/i.test(trimmed)) {
+                            const path = trimmed.replace(/^disallow:\s*/i, '').trim();
+                            if (path) disallowed.push(path);
+                        }
+                    }
+                    return disallowed;
+                } catch {
+                    return [];
+                }
+            }
+
+            isAllowed(url, disallowed) {
+                const pathname = new URL(url).pathname;
+                return !disallowed.some(d => pathname.startsWith(d));
+            }
+
+            tokenize(text) {
+                return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length > 1);
+            }
+
+            async crawlPage(url) {
+                try {
+                    const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+                    if (!resp.ok) return null;
+                    const contentType = resp.headers.get('content-type') || '';
+                    if (!contentType.includes('text/html')) return null;
+                    const html = await resp.text();
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    const title = (doc.querySelector('title')?.textContent || url).slice(0, 200);
+                    doc.querySelectorAll('script, style, noscript, nav, footer, header, aside').forEach(el => el.remove());
+                    const bodyText = (doc.body?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 8000);
+                    const tokens = this.tokenize(title + ' ' + title + ' ' + bodyText);
+                    const counts = {};
+                    tokens.forEach(t => { counts[t] = (counts[t] || 0) + 1; });
+                    const termFreqs = {};
+                    Object.entries(counts).forEach(([t, c]) => { termFreqs[t] = c / tokens.length; });
+
+                    const links = [];
+                    doc.querySelectorAll('a[href]').forEach(a => {
+                        try {
+                            const abs = new URL(a.getAttribute('href'), url).href;
+                            if (/^https?:/.test(abs) && !this.visited.has(abs)) links.push(abs);
+                        } catch {}
+                    });
+
+                    return {
+                        url, title, text: bodyText.slice(0, 300),
+                        domain: new URL(url).hostname,
+                        tokenCount: tokens.length,
+                        termFreqs,
+                        links: [...new Set(links)].slice(0, 15)
+                    };
+                } catch {
+                    return null;
+                }
+            }
+
+            async step() {
+                if (!this.running || !this.queue.length || this.crawledCount >= this.maxPages) {
+                    if (this.crawledCount >= this.maxPages) this.stop();
+                    return;
+                }
+                const item = this.queue.shift();
+                if (!item || this.visited.has(item.url)) { this.step(); return; }
+                this.visited.add(item.url);
+
+                const domain = new URL(item.url).hostname;
+                const disallowed = await this.fetchRobotsTxt(domain, 'https:');
+                if (!this.isAllowed(item.url, disallowed)) { this.step(); return; }
+
+                this.updateStatus(`Crawling ${this.crawledCount + 1}: ${item.url.slice(0, 60)}`);
+                const result = await this.crawlPage(item.url);
+
+                if (result) {
+                    const docId = this.engine.addDocument(result);
+                    this.crawledCount++;
+                    if (item.depth < 2) {
+                        for (const link of result.links) {
+                            if (!this.visited.has(link)) this.queue.push({ url: link, depth: item.depth + 1 });
+                        }
+                    }
+                }
+
+                this.saveState();
+                this.engine.saveIndex();
+                this.updateStatus(`Indexed ${this.crawledCount} pages`);
+                setTimeout(() => this.step(), this.politeness);
+            }
+
+            updateStatus(msg) {
+                const el = document.getElementById('crawl-status');
+                if (el) {
+                    el.style.display = 'block';
+                    el.textContent = msg;
+                }
+            }
+
+            start() {
+                if (this.running) return;
+                this.running = true;
+                this.updateStatus('Crawler starting...');
+                this.engine.loadFromStorage();
+                this.step();
+            }
+
+            stop() {
+                this.running = false;
+                this.saveState();
+                this.updateStatus(`Crawling stopped. ${this.crawledCount} pages indexed.`);
+                setTimeout(() => {
+                    const el = document.getElementById('crawl-status');
+                    if (el) el.style.display = 'none';
+                }, 5000);
+            }
+        }
+
+        const engine = window._searchEngine;
+        const crawler = new BrowserCrawler(engine);
+
+        document.getElementById('start-crawl-btn').addEventListener('click', () => {
+            if (crawler.running) {
+                crawler.stop();
+                document.getElementById('start-crawl-btn').textContent = 'Start Crawling';
+            } else {
+                crawler.start();
+                document.getElementById('start-crawl-btn').textContent = 'Stop Crawling';
+            }
+        });
+
+        if (engine.N === 0) {
+            document.getElementById('start-crawl-btn').textContent = 'Start Crawling (empty index)';
+        }
+
         let settings = {
             searchEngine: 'self',
             customSearchUrl: '',
@@ -272,78 +460,22 @@
 
         class Tab {
             constructor(id, title, url) {
-                this.id = id;
-                this.title = title || 'New Tab';
-                this.url = url || '';
+                this.id = id; this.title = title || 'New Tab'; this.url = url || '';
             }
         }
 
         let tabs = [];
         let activeTabId = null;
         let closedTabs = [];
-
         const tabsDiv = document.getElementById('tabs');
         const urlInput = document.getElementById('url-input');
         const frame = document.getElementById('content-frame');
         const resultsPanel = document.getElementById('results-panel');
-        const backBtn = document.getElementById('back-btn');
-        const fwdBtn = document.getElementById('fwd-btn');
-        const reloadBtn = document.getElementById('reload-btn');
         const newTabBtn = document.getElementById('new-tab-btn');
-        const settingsBtn = document.getElementById('settings-btn');
-        const settingsPanel = document.getElementById('settings-panel');
-        const closeSettingsBtn = document.getElementById('close-settings');
         const findBar = document.getElementById('find-bar');
         const findInput = document.getElementById('find-input');
-        const findCountSpan = document.getElementById('find-count');
 
-        function genId() {
-            return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-        }
-
-        function createTab(title, url) {
-            const id = genId();
-            tabs.push(new Tab(id, title, url));
-            if (tabs.length === 1) activeTabId = id;
-            renderTabs();
-            if (url) navigate(url);
-            return id;
-        }
-
-        function closeTab(id) {
-            if (tabs.length <= 1) return;
-            const idx = tabs.findIndex(t => t.id === id);
-            if (idx === -1) return;
-            const removed = tabs.splice(idx, 1)[0];
-            closedTabs.push(removed);
-            if (activeTabId === id) {
-                activeTabId = tabs[Math.min(idx, tabs.length - 1)]?.id || null;
-            }
-            renderTabs();
-        }
-
-        function reopenTab() {
-            if (!closedTabs.length) return;
-            const tab = closedTabs.pop();
-            tabs.push(tab);
-            activeTabId = tab.id;
-            renderTabs();
-            navigate(tab.url);
-        }
-
-        function switchToTab(id) {
-            if (activeTabId === id) return;
-            const tab = tabs.find(t => t.id === id);
-            if (!tab) return;
-            activeTabId = id;
-            renderTabs();
-            navigate(tab.url);
-        }
-
-        function getActiveTab() {
-            return tabs.find(t => t.id === activeTabId);
-        }
-
+        function genId() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 5); }
         function renderTabs() {
             tabsDiv.innerHTML = '';
             tabs.forEach(tab => {
@@ -357,80 +489,20 @@
             const active = getActiveTab();
             if (active) urlInput.value = active.url || '';
         }
-
-        function showResults() {
-            resultsPanel.style.display = 'block';
-            frame.style.display = 'none';
-        }
-
-        function hideResults() {
-            resultsPanel.style.display = 'none';
-            frame.style.display = '';
-        }
-
-        function isUrl(str) {
-            return /^https?:\/\//i.test(str) || (str.includes('.') && !str.includes(' '));
-        }
+        function getActiveTab() { return tabs.find(t => t.id === activeTabId); }
+        function showResults() { resultsPanel.style.display = 'block'; frame.style.display = 'none'; }
+        function hideResults() { resultsPanel.style.display = 'none'; frame.style.display = ''; }
+        function isUrl(str) { return /^https?:\/\//i.test(str) || (str.includes('.') && !str.includes(' ')); }
 
         function buildProxyUrl(target) {
-            if (settings.proxyMode === 'external' && settings.externalProxyUrl) {
-                return settings.externalProxyUrl + encodeURIComponent(target);
-            }
-            if (settings.proxyMode === 'sw') {
-                return '/proxy?url=' + encodeURIComponent(target);
-            }
+            if (settings.proxyMode === 'external' && settings.externalProxyUrl) return settings.externalProxyUrl + encodeURIComponent(target);
+            if (settings.proxyMode === 'sw') return '/proxy?url=' + encodeURIComponent(target);
             return target;
         }
 
-        let searchIndex = null;
-        let indexReady = false;
-
-        async function loadSearchIndex() {
-            try {
-                const resp = await fetch('search-index.json');
-                searchIndex = await resp.json();
-                indexReady = true;
-            } catch (e) {
-                searchIndex = null;
-                indexReady = false;
-            }
-        }
-        loadSearchIndex();
-
-        function tokenize(text) {
-            return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length > 1);
-        }
-
-        function computeTFIDF(tokens) {
-            const termFreq = {};
-            tokens.forEach(t => { termFreq[t] = (termFreq[t] || 0) + 1; });
-            const totalTokens = tokens.length;
-            const scores = {};
-            Object.keys(termFreq).forEach(term => {
-                const tf = termFreq[term] / totalTokens;
-                const postings = searchIndex.index[term];
-                if (!postings) return;
-                const df = Object.keys(postings).length;
-                const idf = Math.log10(searchIndex.totalDocs / df);
-                for (let docId in postings) {
-                    scores[docId] = (scores[docId] || 0) + tf * idf;
-                }
-            });
-            return scores;
-        }
-
         function searchLocalIndex(query) {
-            if (!indexReady || !searchIndex) return { error: 'Index not loaded yet' };
-            const tokens = tokenize(query);
-            const scores = computeTFIDF(tokens);
-            const results = Object.entries(scores)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 20)
-                .map(([docId, score]) => ({
-                    ...searchIndex.documents[docId],
-                    score: Math.round(score * 100) / 100
-                }));
-            return { engine: 'Self-Hosted Index', results };
+            if (!engine || !engine.ready) return { error: 'Index not loaded yet', results: [] };
+            return engine.search(query, { limit: 20 });
         }
 
         async function fetchCustomResults(query) {
@@ -439,29 +511,21 @@
                 const resp = await fetch(url);
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 return await resp.json();
-            } catch (e) {
-                return { error: e.message };
-            }
+            } catch (e) { return { error: e.message }; }
         }
 
         function displaySearchResults(data) {
             showResults();
-            if (data.error) {
-                resultsPanel.innerHTML = `<div class="message-placeholder">Error: ${escapeHtml(data.error)}</div>`;
-                return;
-            }
+            if (data.error) { resultsPanel.innerHTML = `<div class="message-placeholder">Error: ${escapeHtml(data.error)}</div>`; return; }
             const results = data.results || [];
-            if (!results.length) {
-                resultsPanel.innerHTML = '<div class="message-placeholder">No results found.</div>';
-                return;
-            }
+            if (!results.length) { resultsPanel.innerHTML = '<div class="message-placeholder">No results found. Try crawling first.</div>'; return; }
             let html = `<p style="color:var(--text2); font-size:14px; margin-bottom:16px;">Results from ${escapeHtml(data.engine)}</p>`;
             results.forEach(r => {
                 html += `
                     <div class="result-item">
                         <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener">${escapeHtml(r.title)}</a>
                         <div class="cite">${escapeHtml(r.url)}</div>
-                        <div class="snippet">${escapeHtml(r.text ? r.text.substring(0, 200) : '')}</div>
+                        <div class="snippet">${escapeHtml(r.snippet || (r.text ? r.text.substring(0, 200) : ''))}</div>
                         <div style="color:var(--text2); font-size:12px;">Score: ${r.score || ''}</div>
                     </div>`;
             });
@@ -473,156 +537,69 @@
             const active = getActiveTab();
             if (!active) return;
             let url = rawUrl.trim();
-
             if (!isUrl(url)) {
-                active.url = url;
-                active.title = url;
-                urlInput.value = url;
-                renderTabs();
+                active.url = url; active.title = url; urlInput.value = url; renderTabs();
                 hideResults();
                 resultsPanel.innerHTML = '<div class="message-placeholder">Searching...</div>';
                 showResults();
-
                 let data;
-                if (settings.searchEngine === 'custom' && settings.customSearchUrl) {
-                    data = await fetchCustomResults(url);
-                } else {
-                    data = searchLocalIndex(url);
-                }
+                if (settings.searchEngine === 'custom' && settings.customSearchUrl) data = await fetchCustomResults(url);
+                else data = searchLocalIndex(url);
                 displaySearchResults(data);
                 return;
             }
-
             if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-
-            active.url = url;
-            active.title = url.replace(/^https?:\/\//, '').split('/')[0];
-            renderTabs();
-            urlInput.value = url;
-            hideResults();
-
-            if (settings.proxyMode === 'none') {
-                window.open(url, '_blank', 'noopener,noreferrer');
-                return;
-            }
+            active.url = url; active.title = url.replace(/^https?:\/\//, '').split('/')[0];
+            renderTabs(); urlInput.value = url; hideResults();
+            if (settings.proxyMode === 'none') { window.open(url, '_blank', 'noopener,noreferrer'); return; }
             frame.src = buildProxyUrl(url);
         }
 
-        urlInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                let val = urlInput.value.trim();
-                if (e.ctrlKey) {
-                    if (!val.includes('.') && !val.includes(' ')) val += '.com';
-                    else if (val.includes('.') && !val.includes(' ') && !/^https?:\/\//.test(val)) val = 'https://' + val;
-                    urlInput.value = val;
-                }
-                navigate(val);
-            }
-        });
+        urlInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { navigate(e.target.value.trim()); } });
+        document.getElementById('bookmarkBar').addEventListener('click', (e) => { if (e.target.classList.contains('bookmark-btn')) navigate(e.target.dataset.url); });
+        document.getElementById('back-btn').addEventListener('click', () => { if (frame.contentWindow) frame.contentWindow.history.back(); });
+        document.getElementById('fwd-btn').addEventListener('click', () => { if (frame.contentWindow) frame.contentWindow.history.forward(); });
+        document.getElementById('reload-btn').addEventListener('click', () => { frame.src = frame.src; });
+        newTabBtn.addEventListener('click', () => { createTab('New Tab', settings.homepage); });
 
-        document.getElementById('bookmarkBar').addEventListener('click', (e) => {
-            if (e.target.classList.contains('bookmark-btn')) navigate(e.target.dataset.url);
-        });
-
-        backBtn.addEventListener('click', () => { if (frame.contentWindow) frame.contentWindow.history.back(); });
-        fwdBtn.addEventListener('click', () => { if (frame.contentWindow) frame.contentWindow.history.forward(); });
-        reloadBtn.addEventListener('click', () => { frame.src = frame.src; });
-
-        newTabBtn.addEventListener('click', () => {
-            const id = createTab('New Tab', settings.homepage);
+        function createTab(title, url) {
+            const id = genId();
+            tabs.push(new Tab(id, title, url));
+            if (tabs.length === 1) activeTabId = id;
+            renderTabs();
+            if (url) navigate(url);
+            return id;
+        }
+        function closeTab(id) {
+            if (tabs.length <= 1) return;
+            const idx = tabs.findIndex(t => t.id === id);
+            if (idx === -1) return;
+            closedTabs.push(tabs.splice(idx, 1)[0]);
+            if (activeTabId === id) activeTabId = tabs[Math.min(idx, tabs.length - 1)]?.id || null;
+            renderTabs();
+        }
+        function switchToTab(id) {
+            if (activeTabId === id) return;
+            const tab = tabs.find(t => t.id === id);
+            if (!tab) return;
             activeTabId = id;
             renderTabs();
-            frame.src = 'about:blank';
-            urlInput.value = settings.homepage;
-            if (settings.newtabFocus) urlInput.focus();
-        });
+            navigate(tab.url);
+        }
 
-        settingsBtn.addEventListener('click', () => settingsPanel.classList.toggle('show'));
-        closeSettingsBtn.addEventListener('click', () => settingsPanel.classList.remove('show'));
-
-        document.getElementById('setting-search-engine').value = settings.searchEngine;
-        document.getElementById('custom-search-url').value = settings.customSearchUrl;
-        document.getElementById('setting-proxy-mode').value = settings.proxyMode;
-        document.getElementById('external-proxy-url').value = settings.externalProxyUrl;
-        document.getElementById('setting-homepage').value = settings.homepage;
-        document.getElementById('setting-theme').value = settings.theme;
-        document.getElementById('setting-newtab-focus').checked = settings.newtabFocus;
-        document.getElementById('custom-search-group').style.display = settings.searchEngine === 'custom' ? 'block' : 'none';
-        document.getElementById('external-proxy-group').style.display = settings.proxyMode === 'external' ? 'block' : 'none';
-
-        document.getElementById('setting-search-engine').addEventListener('change', function() {
-            settings.searchEngine = this.value;
-            document.getElementById('custom-search-group').style.display = this.value === 'custom' ? 'block' : 'none';
-            saveSettings();
-        });
-        document.getElementById('custom-search-url').addEventListener('input', function() {
-            settings.customSearchUrl = this.value;
-            saveSettings();
-        });
-        document.getElementById('setting-proxy-mode').addEventListener('change', function() {
-            settings.proxyMode = this.value;
-            document.getElementById('external-proxy-group').style.display = this.value === 'external' ? 'block' : 'none';
-            saveSettings();
-        });
-        document.getElementById('external-proxy-url').addEventListener('input', function() {
-            settings.externalProxyUrl = this.value;
-            saveSettings();
-        });
-        document.getElementById('setting-homepage').addEventListener('input', function() {
-            settings.homepage = this.value;
-            saveSettings();
-        });
-        document.getElementById('setting-theme').addEventListener('change', function() {
-            settings.theme = this.value;
-            document.body.classList.toggle('dark', this.value === 'dark');
-            saveSettings();
-        });
-        document.getElementById('setting-newtab-focus').addEventListener('change', function() {
-            settings.newtabFocus = this.checked;
-            saveSettings();
-        });
+        document.getElementById('settings-btn').addEventListener('click', () => document.getElementById('settings-panel').classList.toggle('show'));
+        document.getElementById('close-settings').addEventListener('click', () => document.getElementById('settings-panel').classList.remove('show'));
 
         document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey) {
-                if (e.key === 't') { e.preventDefault(); newTabBtn.click(); }
-                else if (e.key === 'w') { e.preventDefault(); const a = getActiveTab(); if (a) closeTab(a.id); }
-                else if (e.shiftKey && e.key === 'T') { e.preventDefault(); reopenTab(); }
-                else if (e.key === 'Tab') {
-                    e.preventDefault();
-                    if (tabs.length < 2) return;
-                    const idx = tabs.findIndex(t => t.id === activeTabId);
-                    if (e.shiftKey) {
-                        switchToTab(tabs[idx <= 0 ? tabs.length - 1 : idx - 1].id);
-                    } else {
-                        switchToTab(tabs[idx >= tabs.length - 1 ? 0 : idx + 1].id);
-                    }
-                }
-                else if (e.key === 'l' || e.key === 'k') { e.preventDefault(); urlInput.select(); urlInput.focus(); }
-                else if (e.key === 'f') { e.preventDefault(); findBar.style.display = 'flex'; findInput.focus(); }
-                else if (e.key === 'g') { e.preventDefault(); e.shiftKey ? findPrev() : findNext(); }
-                else if (e.key === 'r') { e.preventDefault(); e.shiftKey ? (frame.src = frame.src) : reloadBtn.click(); }
-                else if (e.key === '+' || e.key === '=') {
-                    e.preventDefault();
-                    let zoom = parseFloat(frame.style.zoom) || 1;
-                    zoom = Math.min(2, zoom + 0.1);
-                    frame.style.zoom = zoom;
-                }
-                else if (e.key === '-') {
-                    e.preventDefault();
-                    let zoom = parseFloat(frame.style.zoom) || 1;
-                    zoom = Math.max(0.5, zoom - 0.1);
-                    frame.style.zoom = zoom;
-                }
-                else if (e.key === '0') { e.preventDefault(); frame.style.zoom = 1; }
-            }
+            if (!e.ctrlKey) return;
+            if (e.key === 't') { e.preventDefault(); newTabBtn.click(); }
+            else if (e.key === 'w') { e.preventDefault(); const a = getActiveTab(); if (a) closeTab(a.id); }
+            else if (e.key === 'l' || e.key === 'k') { e.preventDefault(); urlInput.select(); urlInput.focus(); }
+            else if (e.key === 'f') { e.preventDefault(); findBar.style.display = 'flex'; findInput.focus(); }
+            else if (e.key === 'r') { e.preventDefault(); e.shiftKey ? (frame.src = frame.src) : document.getElementById('reload-btn').click(); }
         });
 
-        function findNext() {}
-        function findPrev() {}
-        document.getElementById('find-next').addEventListener('click', findNext);
-        document.getElementById('find-prev').addEventListener('click', findPrev);
-        document.getElementById('find-close').addEventListener('click', () => findBar.style.display = 'none');
-        findInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') findNext(); });
+        document.getElementById('find-close').addEventListener('click', () => { findBar.style.display = 'none'; });
 
         createTab('New Tab', settings.homepage);
         activeTabId = tabs[0].id;
