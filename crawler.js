@@ -3,7 +3,6 @@ const cheerio = require('cheerio');
 const fs = require('fs');
 const crypto = require('crypto');
 const { URL } = require('url');
-const Database = require('better-sqlite3');
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
 
 const CONFIG = {
@@ -15,13 +14,12 @@ const CONFIG = {
   RETRY_ATTEMPTS: 3,
   RETRY_BASE_MS: 500,
   OUTPUT_FILE: 'search-index.json',
-  DB_FILE: 'frontier.db',
+  STATE_FILE: 'crawler-state.json',
   USER_AGENT: 'SerfXBot/2.0 (+https://github.com/keyler3333/zero-day)',
   RESPECT_ROBOTS: true,
   MAX_LINKS_PER_PAGE: 20,
   TITLE_WEIGHT: 3,
   HEADER_WEIGHT: 2,
-  BODY_WEIGHT: 1,
 };
 
 if (!isMainThread) {
@@ -30,48 +28,37 @@ if (!isMainThread) {
   runMain();
 }
 
-async function runMain() {
-  const db = new Database(CONFIG.DB_FILE);
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS queue (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      url TEXT UNIQUE,
-      depth INTEGER DEFAULT 0,
-      status TEXT DEFAULT 'pending'
-    );
-    CREATE TABLE IF NOT EXISTS visited (
-      url TEXT PRIMARY KEY,
-      content_hash TEXT
-    );
-    CREATE TABLE IF NOT EXISTS documents (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      url TEXT UNIQUE,
-      title TEXT,
-      snippet TEXT,
-      meta_desc TEXT,
-      domain TEXT,
-      token_count INTEGER,
-      term_freqs TEXT,
-      links TEXT,
-      crawled_at TEXT
-    );
-  `);
-
-  const enqueue = db.prepare(`INSERT OR IGNORE INTO queue (url, depth) VALUES (?, ?)`);
-  const markDone = db.prepare(`UPDATE queue SET status='done' WHERE url=?`);
-  const markFailed = db.prepare(`UPDATE queue SET status='failed' WHERE url=?`);
-  const addVisited = db.prepare(`INSERT OR IGNORE INTO visited (url, content_hash) VALUES (?, ?)`);
-  const hasHash = db.prepare(`SELECT url FROM visited WHERE content_hash=?`);
-  const getCount = db.prepare(`SELECT COUNT(*) as c FROM documents`);
-  const insertDoc = db.prepare(`
-    INSERT OR REPLACE INTO documents (url, title, snippet, meta_desc, domain, token_count, term_freqs, links, crawled_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  if (getCount.get().c === 0) {
-    for (const u of CONFIG.START_URLS) enqueue.run(u, 0);
+function loadState() {
+  if (fs.existsSync(CONFIG.STATE_FILE)) {
+    const s = JSON.parse(fs.readFileSync(CONFIG.STATE_FILE, 'utf8'));
+    return {
+      queue: s.queue || [],
+      visited: new Set(s.visited || []),
+      hashes: new Set(s.hashes || []),
+      documents: s.documents || {},
+    };
   }
+  return {
+    queue: CONFIG.START_URLS.map(u => ({ url: u, depth: 0 })),
+    visited: new Set(),
+    hashes: new Set(),
+    documents: {},
+  };
+}
+
+function saveState(queue, visited, hashes, documents) {
+  fs.writeFileSync(CONFIG.STATE_FILE, JSON.stringify({
+    queue,
+    visited: [...visited],
+    hashes: [...hashes],
+    documents,
+  }));
+}
+
+async function runMain() {
+  const state = loadState();
+  const { visited, hashes, documents } = state;
+  let { queue } = state;
 
   const robotsCache = {};
   const domainLastSeen = {};
@@ -118,20 +105,15 @@ async function runMain() {
     if (!CONFIG.RESPECT_ROBOTS) return true;
     const { hostname, protocol, pathname } = new URL(url);
     const rules = await fetchRobots(hostname, protocol);
-    for (const allow of rules.allow) {
-      if (matchesPattern(pathname, allow)) return true;
-    }
-    for (const disallow of rules.disallow) {
-      if (matchesPattern(pathname, disallow)) return false;
-    }
+    for (const a of rules.allow) { if (matchesPattern(pathname, a)) return true; }
+    for (const d of rules.disallow) { if (matchesPattern(pathname, d)) return false; }
     return true;
   }
 
   async function waitForPoliteness(domain) {
     const rules = robotsCache[domain];
-    const delay = (rules && rules.crawlDelay) ? rules.crawlDelay : CONFIG.DEFAULT_POLITENESS_MS;
-    const now = Date.now();
-    const wait = delay - (now - (domainLastSeen[domain] || 0));
+    const delay = rules?.crawlDelay ?? CONFIG.DEFAULT_POLITENESS_MS;
+    const wait = delay - (Date.now() - (domainLastSeen[domain] || 0));
     if (wait > 0) await sleep(wait);
     domainLastSeen[domain] = Date.now();
   }
@@ -150,24 +132,22 @@ async function runMain() {
       }
       u.search = cleaned.toString() ? '?' + cleaned.toString() : '';
       return u.href;
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   }
 
   let activeWorkers = 0;
   let done = false;
-  const getPending = db.prepare(`SELECT url, depth FROM queue WHERE status='pending' LIMIT 1`);
 
   async function dispatch() {
-    while (!done && activeWorkers < CONFIG.CONCURRENCY) {
-      const item = getPending.get();
+    while (!done && queue.length > 0 && activeWorkers < CONFIG.CONCURRENCY) {
+      const item = queue.shift();
       if (!item) break;
-      markDone.run(item.url);
 
       const canonical = canonicalize(item.url, item.url);
-      if (!canonical || !(await isAllowed(canonical))) continue;
+      if (!canonical || visited.has(canonical)) continue;
+      if (!(await isAllowed(canonical))) { visited.add(canonical); continue; }
 
+      visited.add(canonical);
       const domain = new URL(canonical).hostname;
       await waitForPoliteness(domain);
       activeWorkers++;
@@ -175,32 +155,31 @@ async function runMain() {
       spawnWorker({ url: canonical, depth: item.depth }).then(result => {
         activeWorkers--;
         if (result) {
-          const dup = hasHash.get(result.doc.contentHash);
-          if (!dup) {
-            addVisited.run(canonical, result.doc.contentHash);
-            insertDoc.run(
-              result.doc.url, result.doc.title, result.doc.snippet,
-              result.doc.metaDesc, result.doc.domain, result.doc.tokenCount,
-              JSON.stringify(result.doc.termFreqs), JSON.stringify(result.links),
-              new Date().toISOString()
-            );
-            const count = getCount.get().c;
+          if (!hashes.has(result.doc.contentHash)) {
+            hashes.add(result.doc.contentHash);
+            const id = Object.keys(documents).length + 1;
+            documents[id] = result.doc;
+            const count = Object.keys(documents).length;
             process.stdout.write(`\r[${count}/${CONFIG.MAX_DOCS}] ${result.doc.url.slice(0, 80)}`);
-            if (count >= CONFIG.MAX_DOCS) { done = true; return finalise(db); }
+            if (count >= CONFIG.MAX_DOCS) {
+              done = true;
+              return finalise(documents);
+            }
           }
           if (item.depth + 1 <= CONFIG.MAX_DEPTH) {
             for (const link of result.links) {
               const c = canonicalize(link, canonical);
-              if (c) enqueue.run(c, item.depth + 1);
+              if (c && !visited.has(c)) queue.push({ url: c, depth: item.depth + 1 });
             }
           }
-        } else {
-          markFailed.run(item.url);
+          saveState(queue, visited, hashes, documents);
         }
         dispatch();
       });
     }
-    if (activeWorkers === 0) await finalise(db);
+    if (activeWorkers === 0 && !done) {
+      await finalise(documents);
+    }
   }
 
   await dispatch();
@@ -215,36 +194,26 @@ function spawnWorker(item) {
   });
 }
 
-async function finalise(db) {
-  const rows = db.prepare(`SELECT * FROM documents`).all();
-  const totalDocs = rows.length;
+async function finalise(documents) {
+  console.log('\nBuilding index…');
+  const totalDocs = Object.keys(documents).length;
   let totalTokens = 0;
-  const documents = {};
-
-  for (const row of rows) {
-    documents[row.id] = {
-      url: row.url, title: row.title, text: row.snippet,
-      metaDesc: row.meta_desc, domain: row.domain,
-      tokenCount: row.token_count,
-      termFreqs: JSON.parse(row.term_freqs),
-      links: JSON.parse(row.links || '[]'),
-      crawledAt: row.crawled_at,
-    };
-    totalTokens += row.token_count;
-  }
-
-  const avgDocLen = totalTokens / totalDocs;
   const termIndex = {};
 
   for (const docId in documents) {
+    totalTokens += documents[docId].tokenCount;
     for (const [term, tf] of Object.entries(documents[docId].termFreqs)) {
       if (!termIndex[term]) termIndex[term] = {};
       termIndex[term][docId] = tf;
     }
     delete documents[docId].termFreqs;
+    delete documents[docId].contentHash;
   }
 
+  const avgDocLen = totalTokens / totalDocs;
   fs.writeFileSync(CONFIG.OUTPUT_FILE, JSON.stringify({ index: termIndex, documents, totalDocs, avgDocLen, builtAt: new Date().toISOString() }));
+  if (fs.existsSync(CONFIG.STATE_FILE)) fs.unlinkSync(CONFIG.STATE_FILE);
+  console.log(`\nSaved → ${CONFIG.OUTPUT_FILE}`);
   process.exit(0);
 }
 
@@ -278,8 +247,8 @@ async function fetchAndParse(url, config) {
       const bodyText = $('body').text().replace(/\s+/g, ' ').trim().slice(0, 12000);
 
       const weighted = [
-        ...Array(config.TITLE_WEIGHT).fill(null).map(() => tokenize(title)).flat(),
-        ...Array(config.HEADER_WEIGHT).fill(null).map(() => tokenize(h1 + ' ' + h2)).flat(),
+        ...Array(config.TITLE_WEIGHT).fill(null).flatMap(() => tokenize(title)),
+        ...Array(config.HEADER_WEIGHT).fill(null).flatMap(() => tokenize(h1 + ' ' + h2)),
         ...tokenize(bodyText),
       ];
 
@@ -299,8 +268,10 @@ async function fetchAndParse(url, config) {
 
       return {
         doc: {
-          url, title, snippet: bodyText.slice(0, 300), metaDesc, contentHash,
+          url, title, text: bodyText.slice(0, 300), metaDesc, contentHash,
           domain: base.hostname, tokenCount: weighted.length, termFreqs,
+          links: [...new Set(links)].slice(0, config.MAX_LINKS_PER_PAGE),
+          crawledAt: new Date().toISOString(),
         },
         links: [...new Set(links)].slice(0, config.MAX_LINKS_PER_PAGE),
       };
