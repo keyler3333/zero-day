@@ -1,5 +1,3 @@
-import { createTab } from './tabs.js';
-
 const SPEED_DIALS = [
     { name: 'DuckDuckGo', url: 'https://duckduckgo.com', domain: 'duckduckgo.com' },
     { name: 'Brave Search', url: 'https://search.brave.com', domain: 'search.brave.com' },
@@ -16,9 +14,8 @@ function getFaviconUrl(domain) {
 }
 function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-function renderSpeedDials() {
+export function initUI() {
     const grid = document.getElementById('sd-grid');
-    grid.innerHTML = '';
     SPEED_DIALS.forEach(sd => {
         const el = document.createElement('div');
         el.className = 'sd-tile';
@@ -26,18 +23,13 @@ function renderSpeedDials() {
         el.addEventListener('click', () => import('./tabs.js').then(m => m.navigate(sd.url)));
         grid.appendChild(el);
     });
-}
 
-function updateGreeting() {
-    const h = new Date().getHours();
-    document.getElementById('sd-greeting').textContent = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-}
+    const now = new Date().getHours();
+    document.getElementById('sd-greeting').textContent = now < 12 ? 'Good morning' : now < 17 ? 'Good afternoon' : 'Good evening';
 
-export function initUI() {
-    updateGreeting();
-    renderSpeedDials();
-    document.getElementById('url-input').addEventListener('focus', () => document.getElementById('url-input').select());
-    document.getElementById('url-input').addEventListener('input', () => {
-        document.getElementById('url-clear').style.display = document.getElementById('url-input').value ? 'block' : 'none';
+    const urlInput = document.getElementById('url-input');
+    urlInput.addEventListener('focus', () => urlInput.select());
+    urlInput.addEventListener('input', () => {
+        document.getElementById('url-clear').style.display = urlInput.value ? 'block' : 'none';
     });
 }
