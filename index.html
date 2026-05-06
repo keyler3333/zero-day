@@ -1,610 +1,879 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SERF/X</title>
-    <link rel="manifest" href="manifest.json">
-    <link rel="icon" href="assets/icons/icon.svg">
-    <style>
-        :root {
-            --bg: #ffffff;
-            --bar-bg: #f1f3f4;
-            --border: #dadce0;
-            --text: #202124;
-            --text2: #5f6368;
-            --blue: #1a73e8;
-            --tab-h: 36px;
-            --hover: #e8eaed;
-            --result-bg: #fff;
-        }
-        .dark {
-            --bg: #202124;
-            --bar-bg: #292a2d;
-            --border: #5f6368;
-            --text: #e8eaed;
-            --text2: #9aa0a6;
-            --blue: #8ab4f8;
-            --hover: #3c4043;
-            --result-bg: #292a2d;
-        }
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--bg); color: var(--text);
-            display: flex; flex-direction: column; height: 100vh; overflow: hidden;
-            transition: background 0.3s, color 0.3s;
-        }
-        #tab-strip {
-            display: flex; align-items: center;
-            background: var(--bar-bg); border-bottom: 1px solid var(--border);
-            height: var(--tab-h); padding: 0 8px; user-select: none;
-        }
-        #tabs {
-            display: flex; flex: 1; overflow-x: auto; gap: 2px; height: 100%; align-items: flex-end;
-        }
-        #tabs::-webkit-scrollbar { height:2px; }
-        #tabs::-webkit-scrollbar-thumb { background:#c1c1c1; border-radius:2px; }
-        .tab {
-            display: flex; align-items: center; padding: 0 12px; height: 32px;
-            border-radius: 8px 8px 0 0; background: var(--bg); border: 1px solid var(--border);
-            border-bottom: none; cursor: pointer; font-size: 12px; color: var(--text2);
-            min-width: 80px; max-width: 140px; flex-shrink: 0; overflow: hidden; white-space: nowrap;
-            transition: background 0.2s;
-        }
-        .tab.active {
-            background: var(--bg); color: var(--text); border-bottom: 2px solid var(--blue);
-            height: 33px; font-weight: 500;
-        }
-        .tab .tab-title { flex:1; text-overflow:ellipsis; overflow:hidden; text-align:center; }
-        .tab .close-tab {
-            margin-left: 6px; width: 16px; height: 16px; border-radius: 50%;
-            display: flex; align-items: center; justify-content: center; font-size: 10px;
-            color: var(--text2); visibility: hidden; cursor: pointer;
-        }
-        .tab:hover .close-tab { visibility:visible; }
-        .close-tab:hover { background: var(--hover); color: var(--text); }
-        #new-tab-btn {
-            width: 28px; height: 28px; border-radius: 50%; border: none;
-            background: transparent; color: var(--text2); font-size: 18px;
-            cursor: pointer; display: flex; align-items: center; justify-content: center;
-            margin-left: 4px; flex-shrink: 0;
-        }
-        #new-tab-btn:hover { background: var(--hover); }
-        #navbar {
-            display: flex; align-items: center; gap: 8px; padding: 8px 12px;
-            border-bottom: 1px solid var(--border); background: var(--bg);
-        }
-        #url-input {
-            flex: 1; padding: 6px 12px; font-size: 14px;
-            border: 1px solid var(--border); border-radius: 20px;
-            outline: none; color: var(--text); background: var(--bar-bg);
-            transition: border-color 0.2s;
-        }
-        #url-input:focus { border-color: var(--blue); background: var(--bg); }
-        .nav-btn {
-            background: transparent; border: none; padding: 6px; border-radius: 50%;
-            cursor: pointer; color: var(--text2); display: flex;
-        }
-        .nav-btn:hover { background: var(--hover); }
-        #browser-area {
-            flex: 1; position: relative; background: var(--bg);
-        }
-        iframe {
-            width: 100%; height: 100%; border: none; background: #fff;
-            position: absolute; top:0; left:0;
-        }
-        #results-panel {
-            display: none; padding: 20px; overflow-y: auto; height: 100%;
-            background: var(--result-bg); position: absolute; top:0; left:0; width:100%;
-            color: var(--text); font-size: 14px;
-        }
-        .result-item {
-            margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border);
-        }
-        .result-item:last-child { border-bottom: none; }
-        .result-item a {
-            font-size: 18px; font-weight: 500; color: var(--blue); text-decoration: none;
-        }
-        .result-item a:hover { text-decoration: underline; }
-        .result-item .cite {
-            color: var(--text2); font-size: 13px; margin: 4px 0;
-        }
-        .result-item .snippet {
-            color: var(--text); font-size: 14px; line-height: 1.5;
-        }
-        .message-placeholder {
-            color: var(--text2); text-align: center; margin-top: 40px;
-        }
-        .bookmark-bar {
-            display: flex; padding: 4px 12px; background: var(--bar-bg);
-            border-bottom: 1px solid var(--border); overflow-x: auto; gap: 4px;
-            align-items: center; height: 32px;
-        }
-        .bookmark-bar::-webkit-scrollbar { height:2px; }
-        .bookmark-btn {
-            background: transparent; border: none; padding: 2px 8px; font-size: 12px;
-            cursor: pointer; border-radius: 4px; white-space: nowrap; color: var(--text2);
-            flex-shrink: 0;
-        }
-        .bookmark-btn:hover { background: var(--hover); color: var(--text); }
-        .settings-panel {
-            position: fixed; top: 50px; right: 20px; background: var(--bg);
-            border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-            width: 360px; max-height: 80vh; overflow-y: auto; display: none; z-index: 1000;
-            color: var(--text); padding: 20px; font-size: 13px;
-        }
-        .settings-panel.show { display: block; }
-        .settings-panel h2 { font-size: 18px; margin-bottom: 16px; }
-        .setting-group { margin-bottom: 20px; }
-        .setting-group label { display: block; font-weight: 500; margin-bottom: 6px; color: var(--text2); }
-        .setting-group select, .setting-group input[type="text"], .setting-group input[type="url"] {
-            width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
-            background: var(--bar-bg); color: var(--text); font-size: 13px;
-        }
-        .setting-group input[type="checkbox"] { margin-right: 8px; }
-        .setting-group .hint { font-size: 11px; color: var(--text2); margin-top: 4px; }
-        .setting-group .hint code { background: var(--hover); padding: 2px 4px; border-radius: 4px; }
-        #close-settings { float: right; background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text2); }
-        .find-bar {
-            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-            background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: none; align-items: center;
-            padding: 6px 12px; gap: 8px; z-index: 1001;
-        }
-        .find-bar input { background: var(--bar-bg); border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; color: var(--text); outline: none; font-size: 13px; width: 180px; }
-        .find-bar button { background: transparent; border: none; cursor: pointer; color: var(--text2); font-size: 14px; }
-        .find-bar button:hover { color: var(--text); }
-        .find-bar span { color: var(--text2); font-size: 12px; }
-        .crawl-status {
-            position: fixed; bottom: 60px; right: 20px; background: var(--bg); border: 1px solid var(--border);
-            border-radius: 8px; padding: 8px 14px; font-size: 12px; color: var(--text2); z-index: 999;
-            display: none;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SERF/X</title>
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #1a1b1e;
+  --surface: #222428;
+  --surface2: #2a2d33;
+  --border: #32363f;
+  --text: #e8eaed;
+  --text2: #8b8fa8;
+  --text3: #555a6e;
+  --accent: #e8401c;
+  --accent2: #ff6b47;
+  --sidebar-w: 60px;
+  --tab-h: 42px;
+  --bar-h: 52px;
+  --radius: 10px;
+  --font: 'DM Sans', sans-serif;
+  --mono: 'DM Mono', monospace;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; overflow:hidden; }
+body { font-family:var(--font); background:var(--bg); color:var(--text); display:flex; font-size:13px; }
+
+#sidebar {
+  width:var(--sidebar-w); background:var(--surface); border-right:1px solid var(--border);
+  display:flex; flex-direction:column; align-items:center; padding:10px 0; gap:2px;
+  z-index:100; flex-shrink:0;
+}
+.sb-logo {
+  width:32px; height:32px; background:var(--accent); border-radius:10px;
+  display:flex; align-items:center; justify-content:center;
+  font-weight:700; font-size:14px; color:#fff; margin-bottom:14px; flex-shrink:0;
+}
+.sb-btn {
+  width:40px; height:40px; border:none; background:transparent; border-radius:10px;
+  cursor:pointer; display:flex; align-items:center; justify-content:center;
+  color:var(--text3); transition:all 0.15s; position:relative; flex-shrink:0;
+}
+.sb-btn:hover { background:var(--surface2); color:var(--text2); }
+.sb-btn.active { background:var(--surface2); color:var(--accent); }
+.sb-btn svg { width:18px; height:18px; fill:currentColor; }
+.sb-spacer { flex:1; }
+.sb-divider { width:28px; height:1px; background:var(--border); margin:6px 0; flex-shrink:0; }
+.sb-btn::after {
+  content:attr(data-tip); position:absolute; left:calc(100% + 10px);
+  background:#111; color:var(--text); font-size:11px; padding:4px 8px; border-radius:6px;
+  white-space:nowrap; pointer-events:none; opacity:0; transform:translateX(-4px);
+  transition:all 0.15s; z-index:999;
+}
+.sb-btn:hover::after { opacity:1; transform:translateX(0); }
+
+#main { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
+
+#tab-strip {
+  height:var(--tab-h); background:var(--surface); border-bottom:1px solid var(--border);
+  display:flex; align-items:flex-end; padding:0 8px; gap:1px; overflow-x:auto; flex-shrink:0;
+}
+#tab-strip::-webkit-scrollbar { height:0; }
+#tabs { display:flex; align-items:flex-end; gap:1px; flex:1; }
+.tab {
+  display:flex; align-items:center; gap:6px; height:34px; padding:0 12px;
+  border-radius:8px 8px 0 0; background:var(--bg); border:1px solid transparent;
+  border-bottom:none; cursor:pointer; font-size:12px; color:var(--text2);
+  min-width:100px; max-width:180px; flex-shrink:0; overflow:hidden;
+  transition:background 0.15s, color 0.15s; user-select:none;
+}
+.tab:hover { background:var(--surface2); color:var(--text); }
+.tab.active {
+  background:var(--bg); color:var(--text); border-color:var(--border);
+  border-bottom-color:var(--bg); position:relative; top:1px;
+}
+.tab .tab-favicon {
+  width:14px; height:14px; flex-shrink:0; border-radius:3px;
+  display:flex; align-items:center; justify-content:center; overflow:hidden;
+}
+.tab .tab-favicon img { width:100%; height:100%; object-fit:cover; }
+.tab .tab-favicon .fav-fallback {
+  width:14px; height:14px; background:var(--text3); border-radius:3px;
+}
+.tab .tab-title { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tab .tab-close {
+  width:16px; height:16px; border-radius:4px; display:flex; align-items:center;
+  justify-content:center; font-size:11px; color:var(--text3); flex-shrink:0;
+  opacity:0; transition:opacity 0.1s, background 0.1s;
+}
+.tab:hover .tab-close { opacity:1; }
+.tab-close:hover { background:var(--border); color:var(--text) !important; }
+#new-tab-btn {
+  width:28px; height:28px; border-radius:7px; border:none; background:transparent;
+  color:var(--text3); font-size:16px; cursor:pointer; display:flex;
+  align-items:center; justify-content:center; margin-bottom:4px;
+  transition:all 0.15s; flex-shrink:0;
+}
+#new-tab-btn:hover { background:var(--surface2); color:var(--text); }
+
+#navbar {
+  height:var(--bar-h); background:var(--bg); border-bottom:1px solid var(--border);
+  display:flex; align-items:center; padding:0 12px; gap:6px; flex-shrink:0;
+}
+.nav-btn {
+  width:32px; height:32px; border-radius:8px; border:none; background:transparent;
+  color:var(--text2); cursor:pointer; display:flex; align-items:center;
+  justify-content:center; transition:all 0.15s; flex-shrink:0;
+}
+.nav-btn:hover { background:var(--surface); color:var(--text); }
+.nav-btn:disabled { opacity:0.3; cursor:default; }
+.nav-btn svg { width:16px; height:16px; fill:currentColor; }
+#url-wrap { flex:1; position:relative; display:flex; align-items:center; }
+#url-lock {
+  position:absolute; left:10px; color:var(--text3); pointer-events:none; display:flex;
+}
+#url-lock svg { width:13px; height:13px; fill:currentColor; }
+#url-input {
+  width:100%; height:34px; padding:0 36px 0 30px; background:var(--surface);
+  border:1px solid var(--border); border-radius:8px; color:var(--text);
+  font-family:var(--font); font-size:13px; outline:none; transition:all 0.15s;
+}
+#url-input:focus { background:var(--surface2); border-color:var(--accent); box-shadow:0 0 0 3px rgba(232,64,28,0.12); }
+#url-input::placeholder { color:var(--text3); }
+#url-clear {
+  position:absolute; right:8px; background:none; border:none; cursor:pointer;
+  color:var(--text3); display:none; padding:2px; border-radius:4px; transition:color 0.1s;
+}
+#url-clear:hover { color:var(--text); }
+.nav-sep { width:1px; height:20px; background:var(--border); flex-shrink:0; }
+
+#browser-area { flex:1; position:relative; overflow:hidden; }
+iframe#content-frame { width:100%; height:100%; border:none; position:absolute; inset:0; background:#fff; display:none; }
+
+#speed-dial {
+  display:none; position:absolute; inset:0; background:var(--bg);
+  overflow-y:auto; padding:48px 40px;
+}
+#speed-dial.visible { display:block; }
+.sd-search-wrap { max-width:580px; margin:0 auto 48px; }
+.sd-greeting {
+  font-size:26px; font-weight:600; text-align:center; margin-bottom:24px;
+  color:var(--text); letter-spacing:-0.5px;
+}
+.sd-search-box {
+  display:flex; align-items:center; background:var(--surface);
+  border:1px solid var(--border); border-radius:12px; overflow:hidden; transition:all 0.2s;
+}
+.sd-search-box:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px rgba(232,64,28,0.15); }
+#sd-search-input {
+  flex:1; height:48px; padding:0 16px; background:none; border:none;
+  color:var(--text); font-size:14px; font-family:var(--font); outline:none;
+}
+#sd-search-input::placeholder { color:var(--text3); }
+.sd-search-go {
+  width:48px; height:48px; background:var(--accent); border:none; color:#fff;
+  cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background 0.15s;
+}
+.sd-search-go:hover { background:var(--accent2); }
+.sd-search-go svg { width:17px; height:17px; fill:currentColor; }
+
+.sd-section { max-width:780px; margin:0 auto 36px; }
+.sd-section-title {
+  font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase;
+  color:var(--text3); margin-bottom:14px;
+}
+.sd-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(110px, 1fr)); gap:10px; }
+.sd-tile {
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:16px 12px; cursor:pointer; transition:all 0.15s;
+  display:flex; flex-direction:column; align-items:center; gap:10px; text-decoration:none;
+}
+.sd-tile:hover { background:var(--surface2); border-color:var(--text3); transform:translateY(-2px); box-shadow:0 8px 20px rgba(0,0,0,0.25); }
+.sd-tile-icon {
+  width:40px; height:40px; border-radius:10px; overflow:hidden;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--surface2);
+}
+.sd-tile-icon img { width:100%; height:100%; object-fit:cover; }
+.sd-tile-icon .icon-fallback {
+  width:100%; height:100%; background:var(--surface2); display:flex;
+  align-items:center; justify-content:center; font-size:16px; font-weight:700;
+  color:var(--text2);
+}
+.sd-tile-name { font-size:12px; color:var(--text2); text-align:center; }
+.sd-tile-add { border:1px dashed var(--border) !important; background:transparent !important; }
+.sd-tile-add .sd-tile-icon { background:transparent; }
+.sd-tile-add .plus-icon { font-size:22px; color:var(--text3); font-weight:300; }
+
+#results-panel {
+  display:none; position:absolute; inset:0; background:var(--bg);
+  overflow-y:auto; padding:32px 40px;
+}
+.res-header { color:var(--text3); font-size:12px; margin-bottom:8px; }
+.res-query { font-size:22px; font-weight:600; margin-bottom:24px; letter-spacing:-0.5px; }
+.res-item { margin-bottom:28px; padding-bottom:24px; border-bottom:1px solid var(--border); }
+.res-item:last-child { border-bottom:none; }
+.res-title { font-size:17px; font-weight:500; color:#8ab4f8; text-decoration:none; display:block; margin-bottom:4px; }
+.res-title:hover { text-decoration:underline; }
+.res-url { color:var(--text3); font-size:12px; margin-bottom:6px; font-family:var(--mono); }
+.res-snippet { color:var(--text2); font-size:13px; line-height:1.65; }
+.res-score { color:var(--text3); font-size:11px; margin-top:4px; font-family:var(--mono); }
+.res-empty { color:var(--text3); text-align:center; padding:80px 20px; font-size:14px; }
+.res-empty strong { display:block; font-size:18px; color:var(--text2); margin-bottom:8px; }
+
+#panel-overlay { display:none; position:absolute; inset:0; background:rgba(0,0,0,0.4); z-index:200; }
+#panel-overlay.open { display:block; }
+.panel {
+  position:absolute; left:var(--sidebar-w); top:0; bottom:0; width:300px;
+  background:var(--surface); border-right:1px solid var(--border);
+  display:flex; flex-direction:column; transform:translateX(-100%);
+  transition:transform 0.2s ease; z-index:201;
+}
+.panel.open { transform:translateX(0); }
+.panel-header {
+  padding:18px 16px 14px; border-bottom:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between;
+}
+.panel-title { font-size:14px; font-weight:600; }
+.panel-close { background:none; border:none; cursor:pointer; color:var(--text3); font-size:18px; padding:2px; border-radius:4px; }
+.panel-close:hover { color:var(--text); }
+.panel-body { flex:1; overflow-y:auto; padding:12px; }
+.panel-item {
+  padding:10px; border-radius:8px; cursor:pointer;
+  display:flex; align-items:center; gap:10px; transition:background 0.1s;
+}
+.panel-item:hover { background:var(--surface2); }
+.panel-item-favicon { width:24px; height:24px; border-radius:6px; flex-shrink:0; overflow:hidden; display:flex; align-items:center; justify-content:center; background:var(--surface2); }
+.panel-item-favicon img { width:16px; height:16px; object-fit:cover; }
+.panel-item-text { flex:1; overflow:hidden; }
+.panel-item-title { font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.panel-item-sub { font-size:11px; color:var(--text3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:1px; }
+
+.setting-row { padding:10px; border-radius:8px; margin-bottom:4px; }
+.setting-row label { display:block; font-size:11px; color:var(--text3); margin-bottom:5px; text-transform:uppercase; letter-spacing:0.06em; }
+.setting-row select, .setting-row input[type="text"], .setting-row input[type="url"] {
+  width:100%; padding:7px 10px; background:var(--surface2); border:1px solid var(--border);
+  border-radius:7px; color:var(--text); font-size:12px; font-family:var(--font); outline:none;
+}
+.setting-row select:focus, .setting-row input:focus { border-color:var(--accent); }
+.setting-toggle { display:flex; align-items:center; justify-content:space-between; padding:10px; }
+.toggle { width:36px; height:20px; background:var(--border); border-radius:10px; cursor:pointer; position:relative; transition:background 0.2s; border:none; flex-shrink:0; }
+.toggle.on { background:var(--accent); }
+.toggle::after { content:''; width:14px; height:14px; background:#fff; border-radius:50%; position:absolute; top:3px; left:3px; transition:left 0.2s; }
+.toggle.on::after { left:19px; }
+
+#find-bar {
+  position:absolute; bottom:20px; right:20px; background:var(--surface);
+  border:1px solid var(--border); border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,0.4);
+  display:none; align-items:center; padding:6px 10px; gap:6px; z-index:300;
+}
+#find-bar input {
+  background:var(--surface2); border:1px solid var(--border); border-radius:6px;
+  padding:4px 8px; color:var(--text); outline:none; font-size:12px; width:180px; font-family:var(--font);
+}
+#find-bar input:focus { border-color:var(--accent); }
+#find-bar button { background:none; border:none; cursor:pointer; color:var(--text3); font-size:13px; padding:2px 4px; border-radius:4px; }
+#find-bar button:hover { color:var(--text); }
+#find-count { font-size:11px; color:var(--text3); min-width:32px; text-align:center; }
+
+#statusbar {
+  height:22px; background:var(--surface); border-top:1px solid var(--border);
+  display:flex; align-items:center; padding:0 12px; gap:12px; flex-shrink:0;
+}
+.status-chip { display:flex; align-items:center; gap:4px; font-size:10px; color:var(--text3); font-family:var(--mono); }
+.status-dot { width:5px; height:5px; border-radius:50%; background:var(--text3); }
+.status-dot.green { background:#4caf50; }
+#status-url { flex:1; font-size:10px; color:var(--text3); font-family:var(--mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+::-webkit-scrollbar { width:5px; height:5px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+::-webkit-scrollbar-thumb:hover { background:var(--text3); }
+</style>
 </head>
 <body>
-    <div id="tab-strip">
-        <div id="tabs"></div>
-        <button id="new-tab-btn" aria-label="New tab">+</button>
+
+<div id="sidebar">
+  <div class="sb-logo">S</div>
+  <button class="sb-btn" id="btn-sd" data-tip="Speed Dial" onclick="showSpeedDial()">
+    <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3zm0 10h8v8H3zm10-10h8v8h-8zm0 10h8v8h-8z"/></svg>
+  </button>
+  <button class="sb-btn" id="btn-bm" data-tip="Bookmarks" onclick="togglePanel('bm-panel')">
+    <svg viewBox="0 0 24 24"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>
+  </button>
+  <button class="sb-btn" id="btn-hist" data-tip="History" onclick="togglePanel('hist-panel')">
+    <svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 00-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0013 21a9 9 0 000-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+  </button>
+  <div class="sb-spacer"></div>
+  <div class="sb-divider"></div>
+  <button class="sb-btn" id="btn-settings" data-tip="Settings" onclick="togglePanel('settings-panel')">
+    <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.33-.02-.64-.06-.94l2.03-1.58a.49.49 0 00.12-.56l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.56l2.03 1.58c-.04.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.56l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.56l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+  </button>
+</div>
+
+<div id="main">
+  <div id="tab-strip">
+    <div id="tabs"></div>
+    <button id="new-tab-btn">+</button>
+  </div>
+
+  <div id="navbar">
+    <button class="nav-btn" id="back-btn" disabled>
+      <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+    </button>
+    <button class="nav-btn" id="fwd-btn" disabled>
+      <svg viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
+    </button>
+    <button class="nav-btn" id="reload-btn">
+      <svg viewBox="0 0 24 24"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+    </button>
+    <div id="url-wrap">
+      <span id="url-lock"><svg viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg></span>
+      <input type="text" id="url-input" placeholder="Search your index or enter URL" autocomplete="off" spellcheck="false">
+      <button id="url-clear"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
     </div>
-    <div id="navbar">
-        <button class="nav-btn" id="back-btn" aria-label="Back">
-            <svg width="18" height="18" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
-        </button>
-        <button class="nav-btn" id="fwd-btn" aria-label="Forward">
-            <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
-        </button>
-        <button class="nav-btn" id="reload-btn" aria-label="Reload">
-            <svg width="18" height="18" viewBox="0 0 24 24"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
-        </button>
-        <input type="text" id="url-input" placeholder="Search or enter URL" autofocus>
-        <button class="nav-btn" id="settings-btn" aria-label="Settings">
-            <svg width="18" height="18" viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.33-.02-.64-.06-.94l2.02-1.58c.18-.14.23-.38.12-.56l-1.92-3.32c-.12-.19-.36-.26-.56-.18l-2.37.95c-.49-.38-1.04-.68-1.63-.89L14.45 3.6c-.04-.24-.24-.41-.49-.41h-3.84c-.25 0-.45.17-.49.41l-.35 2.88c-.59.21-1.14.51-1.63.89l-2.37-.95c-.2-.08-.44-.01-.56.18l-1.92 3.32c-.12.18-.06.42.12.56l2.02 1.58c-.04.3-.06.61-.06.94s.02.64.06.94l-2.02 1.58c-.18.14-.23.38-.12.56l1.92 3.32c.12.19.36.26.56.18l2.37-.95c.49.38 1.04.68 1.63.89l.35 2.88c.04.24.24.41.49.41h3.84c.25 0 .45-.17.49-.41l.35-2.88c.59-.21 1.14-.51 1.63-.89l2.37.95c.2.08.44.01.56-.18l1.92-3.32c.12-.18.06-.42-.12-.56l-2.02-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
-        </button>
-    </div>
-    <div class="bookmark-bar" id="bookmarkBar">
-        <button class="bookmark-btn" data-url="https://duckduckgo.com">DuckDuckGo</button>
-        <button class="bookmark-btn" data-url="https://search.brave.com">Brave</button>
-        <button class="bookmark-btn" data-url="https://github.com">GitHub</button>
-        <button class="bookmark-btn" data-url="https://discord.com">Discord</button>
-        <button class="bookmark-btn" data-url="https://www.tiktok.com">TikTok</button>
-        <button class="bookmark-btn" data-url="https://www.reddit.com">Reddit</button>
-    </div>
-    <div id="browser-area">
-        <iframe id="content-frame" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals allow-orientation-lock allow-pointer-lock allow-presentation"></iframe>
-        <div id="results-panel"></div>
-    </div>
-    <div class="crawl-status" id="crawl-status"></div>
-    <div class="settings-panel" id="settings-panel">
-        <button id="close-settings">&times;</button>
-        <h2>Settings</h2>
-        <div class="setting-group">
-            <label>Search engine</label>
-            <select id="setting-search-engine">
-                <option value="self">Self-Hosted Index (auto-crawling)</option>
-                <option value="custom">Custom API</option>
-            </select>
-            <div class="hint">Crawls and indexes pages automatically in your browser.</div>
+    <div class="nav-sep"></div>
+    <button class="nav-btn" id="bm-add-btn" title="Bookmark this page">
+      <svg viewBox="0 0 24 24"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2zm0 15l-5-2.18L7 18V5h10v13z"/></svg>
+    </button>
+    <button class="nav-btn" id="find-open-btn">
+      <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+    </button>
+  </div>
+
+  <div id="browser-area">
+    <iframe id="content-frame" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"></iframe>
+
+    <div id="speed-dial" class="visible">
+      <div class="sd-search-wrap">
+        <div class="sd-greeting" id="sd-greeting">Good morning</div>
+        <div class="sd-search-box">
+          <input type="text" id="sd-search-input" placeholder="Search your index…" autocomplete="off">
+          <button class="sd-search-go" onclick="doSpeedSearch()">
+            <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+          </button>
         </div>
-        <div class="setting-group" id="custom-search-group" style="display:none;">
-            <label>Custom search URL <span class="hint">Use <code>%s</code> for query</span></label>
-            <input type="text" id="custom-search-url" placeholder="https://my-api.com/search?q=%s">
-        </div>
-        <div class="setting-group">
-            <button id="start-crawl-btn" style="width:100%; padding:10px; background:var(--blue); color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:14px;">Start Crawling</button>
-            <div class="hint">Adds pages to your search index. Progress saved automatically.</div>
-        </div>
-        <div class="setting-group">
-            <label>Proxy mode</label>
-            <select id="setting-proxy-mode">
-                <option value="none">None (direct)</option>
-                <option value="sw">Service Worker proxy</option>
-                <option value="external">External proxy URL</option>
-            </select>
-        </div>
-        <div class="setting-group" id="external-proxy-group" style="display:none;">
-            <label>External proxy URL</label>
-            <input type="url" id="external-proxy-url" placeholder="https://your-proxy.com/browse?url=">
-        </div>
-        <div class="setting-group">
-            <label>Homepage</label>
-            <input type="text" id="setting-homepage" placeholder="https://duckduckgo.com">
-        </div>
-        <div class="setting-group">
-            <label>Theme</label>
-            <select id="setting-theme">
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-            </select>
-        </div>
-        <div class="setting-group">
-            <label><input type="checkbox" id="setting-newtab-focus"> Focus address bar on new tab</label>
-        </div>
+      </div>
+
+      <div class="sd-section">
+        <div class="sd-section-title">Speed Dial</div>
+        <div class="sd-grid" id="sd-grid"></div>
+      </div>
+
+      <div class="sd-section" id="sd-recent-section" style="display:none">
+        <div class="sd-section-title">Recently Visited</div>
+        <div class="sd-grid" id="sd-recent-grid"></div>
+      </div>
     </div>
 
-    <script type="module">
-        import { SearchEngine } from './search.js';
+    <div id="results-panel"></div>
+  </div>
 
-        window._searchEngine = new SearchEngine();
-        window._searchEngine.load();
+  <div id="statusbar">
+    <span id="status-url"></span>
+    <div class="status-chip" style="margin-left:auto">
+      <span class="status-dot green"></span><span>SECURE</span>
+    </div>
+    <div class="status-chip">
+      <span id="zoom-display">100%</span>
+    </div>
+  </div>
+</div>
 
-        const CRAWL_STORE_KEY = 'serfx_crawl_state';
+<div id="panel-overlay" onclick="closeAllPanels()"></div>
 
-        class BrowserCrawler {
-            constructor(engine) {
-                this.engine = engine;
-                this.queue = [];
-                this.visited = new Set();
-                this.running = false;
-                this.politeness = 800;
-                this.maxPages = 500;
-                this.crawledCount = 0;
-                this.loadState();
-            }
+<div class="panel" id="bm-panel">
+  <div class="panel-header">
+    <span class="panel-title">Bookmarks</span>
+    <button class="panel-close" onclick="closeAllPanels()">×</button>
+  </div>
+  <div class="panel-body" id="bm-list"></div>
+</div>
 
-            loadState() {
-                try {
-                    const saved = localStorage.getItem(CRAWL_STORE_KEY);
-                    if (saved) {
-                        const state = JSON.parse(saved);
-                        this.queue = state.queue || [];
-                        this.visited = new Set(state.visited || []);
-                        this.crawledCount = state.crawledCount || 0;
-                    }
-                } catch (e) {}
-                if (!this.queue.length) {
-                    this.queue.push(
-                        { url: 'https://en.wikipedia.org/wiki/Search_engine', depth: 0 },
-                        { url: 'https://developer.mozilla.org', depth: 0 }
-                    );
-                }
-            }
+<div class="panel" id="hist-panel">
+  <div class="panel-header">
+    <span class="panel-title">History</span>
+    <button class="panel-close" onclick="closeAllPanels()">×</button>
+  </div>
+  <div class="panel-body" id="hist-list"></div>
+</div>
 
-            saveState() {
-                localStorage.setItem(CRAWL_STORE_KEY, JSON.stringify({
-                    queue: this.queue.slice(0, 200),
-                    visited: [...this.visited].slice(0, 10000),
-                    crawledCount: this.crawledCount
-                }));
-            }
+<div class="panel" id="settings-panel">
+  <div class="panel-header">
+    <span class="panel-title">Settings</span>
+    <button class="panel-close" onclick="closeAllPanels()">×</button>
+  </div>
+  <div class="panel-body">
+    <div class="setting-row">
+      <label>Proxy Mode</label>
+      <select id="s-proxy">
+        <option value="none">None (open in new tab)</option>
+        <option value="sw">Service Worker</option>
+        <option value="external">External Proxy</option>
+      </select>
+    </div>
+    <div class="setting-row" id="s-proxy-url-wrap" style="display:none">
+      <label>Proxy URL</label>
+      <input type="url" id="s-proxy-url" placeholder="https://proxy.example.com/?url=">
+    </div>
+    <div class="setting-row">
+      <label>Fallback Search (when no local results)</label>
+      <select id="s-fallback">
+        <option value="none">None</option>
+        <option value="brave">Brave Search</option>
+        <option value="ddg">DuckDuckGo</option>
+        <option value="google">Google</option>
+      </select>
+    </div>
+    <div class="setting-toggle">
+      <span style="font-size:13px;color:var(--text2)">Focus search on new tab</span>
+      <button class="toggle on" id="t-newtab" onclick="this.classList.toggle('on');cfg.newtabFocus=this.classList.contains('on');saveCfg()"></button>
+    </div>
+  </div>
+</div>
 
-            async fetchRobotsTxt(domain, protocol) {
-                try {
-                    const resp = await fetch(`${protocol}//${domain}/robots.txt`, { signal: AbortSignal.timeout(4000) });
-                    const text = await resp.text();
-                    const disallowed = [];
-                    let inBlock = false;
-                    for (const line of text.split('\n')) {
-                        const trimmed = line.trim();
-                        if (/^user-agent:\s*\*/i.test(trimmed)) inBlock = true;
-                        else if (/^user-agent:/i.test(trimmed)) inBlock = false;
-                        else if (inBlock && /^disallow:/i.test(trimmed)) {
-                            const path = trimmed.replace(/^disallow:\s*/i, '').trim();
-                            if (path) disallowed.push(path);
-                        }
-                    }
-                    return disallowed;
-                } catch {
-                    return [];
-                }
-            }
+<div id="find-bar">
+  <input type="text" id="find-input" placeholder="Find…">
+  <span id="find-count">—</span>
+  <button onclick="findNext()">▼</button>
+  <button onclick="findPrev()">▲</button>
+  <button onclick="closeFindBar()">✕</button>
+</div>
 
-            isAllowed(url, disallowed) {
-                const pathname = new URL(url).pathname;
-                return !disallowed.some(d => pathname.startsWith(d));
-            }
+<script>
+const SPEED_DIALS = [
+  { name: 'DuckDuckGo',  url: 'https://duckduckgo.com',          domain: 'duckduckgo.com' },
+  { name: 'Brave Search',url: 'https://search.brave.com',         domain: 'search.brave.com' },
+  { name: 'GitHub',      url: 'https://github.com',               domain: 'github.com' },
+  { name: 'Reddit',      url: 'https://reddit.com',               domain: 'reddit.com' },
+  { name: 'Wikipedia',   url: 'https://wikipedia.org',            domain: 'wikipedia.org' },
+  { name: 'MDN',         url: 'https://developer.mozilla.org',    domain: 'developer.mozilla.org' },
+  { name: 'Discord',     url: 'https://discord.com',              domain: 'discord.com' },
+  { name: 'YouTube',     url: 'https://youtube.com',              domain: 'youtube.com' },
+];
 
-            tokenize(text) {
-                return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length > 1);
-            }
+const FALLBACK_URLS = {
+  brave:  'https://search.brave.com/search?q=%s',
+  ddg:    'https://duckduckgo.com/?q=%s',
+  google: 'https://www.google.com/search?q=%s',
+};
 
-            async crawlPage(url) {
-                try {
-                    const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
-                    if (!resp.ok) return null;
-                    const contentType = resp.headers.get('content-type') || '';
-                    if (!contentType.includes('text/html')) return null;
-                    const html = await resp.text();
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(html, 'text/html');
-                    const title = (doc.querySelector('title')?.textContent || url).slice(0, 200);
-                    doc.querySelectorAll('script, style, noscript, nav, footer, header, aside').forEach(el => el.remove());
-                    const bodyText = (doc.body?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 8000);
-                    const tokens = this.tokenize(title + ' ' + title + ' ' + bodyText);
-                    const counts = {};
-                    tokens.forEach(t => { counts[t] = (counts[t] || 0) + 1; });
-                    const termFreqs = {};
-                    Object.entries(counts).forEach(([t, c]) => { termFreqs[t] = c / tokens.length; });
+let cfg = { proxy: 'none', proxyUrl: '', fallback: 'ddg', newtabFocus: true };
+try { Object.assign(cfg, JSON.parse(localStorage.getItem('serfx_cfg') || '{}')); } catch {}
 
-                    const links = [];
-                    doc.querySelectorAll('a[href]').forEach(a => {
-                        try {
-                            const abs = new URL(a.getAttribute('href'), url).href;
-                            if (/^https?:/.test(abs) && !this.visited.has(abs)) links.push(abs);
-                        } catch {}
-                    });
+let tabs = [];
+let activeTabId = null;
+let closedStack = [];
+let history2 = [];
+let bookmarks = [];
+try { history2 = JSON.parse(localStorage.getItem('serfx_hist') || '[]'); } catch {}
+try { bookmarks = JSON.parse(localStorage.getItem('serfx_bm') || '[]'); } catch {}
+let zoomLevel = 1;
 
-                    return {
-                        url, title, text: bodyText.slice(0, 300),
-                        domain: new URL(url).hostname,
-                        tokenCount: tokens.length,
-                        termFreqs,
-                        links: [...new Set(links)].slice(0, 15)
-                    };
-                } catch {
-                    return null;
-                }
-            }
+const frame = document.getElementById('content-frame');
+const urlInput = document.getElementById('url-input');
+const resultsPanel = document.getElementById('results-panel');
+const speedDial = document.getElementById('speed-dial');
 
-            async step() {
-                if (!this.running || !this.queue.length || this.crawledCount >= this.maxPages) {
-                    if (this.crawledCount >= this.maxPages) this.stop();
-                    return;
-                }
-                const item = this.queue.shift();
-                if (!item || this.visited.has(item.url)) { this.step(); return; }
-                this.visited.add(item.url);
+let localIndex = null;
+let localIndexReady = false;
+fetch('search-index.json').then(r => r.json()).then(d => { localIndex = d; localIndexReady = true; }).catch(() => {});
 
-                const domain = new URL(item.url).hostname;
-                const disallowed = await this.fetchRobotsTxt(domain, 'https:');
-                if (!this.isAllowed(item.url, disallowed)) { this.step(); return; }
+function saveCfg() { localStorage.setItem('serfx_cfg', JSON.stringify(cfg)); }
 
-                this.updateStatus(`Crawling ${this.crawledCount + 1}: ${item.url.slice(0, 60)}`);
-                const result = await this.crawlPage(item.url);
+function faviconUrl(domain) {
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`;
+}
 
-                if (result) {
-                    const docId = this.engine.addDocument(result);
-                    this.crawledCount++;
-                    if (item.depth < 2) {
-                        for (const link of result.links) {
-                            if (!this.visited.has(link)) this.queue.push({ url: link, depth: item.depth + 1 });
-                        }
-                    }
-                }
+function faviconImg(domain, size) {
+  const s = size || 40;
+  return `<img src="${faviconUrl(domain)}" width="${s}" height="${s}" style="border-radius:${size ? 4 : 10}px" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="icon-fallback" style="display:none">${domain.charAt(0).toUpperCase()}</span>`;
+}
 
-                this.saveState();
-                this.engine.saveIndex();
-                this.updateStatus(`Indexed ${this.crawledCount} pages`);
-                setTimeout(() => this.step(), this.politeness);
-            }
+function updateGreeting() {
+  const h = new Date().getHours();
+  document.getElementById('sd-greeting').textContent = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+}
+updateGreeting();
 
-            updateStatus(msg) {
-                const el = document.getElementById('crawl-status');
-                if (el) {
-                    el.style.display = 'block';
-                    el.textContent = msg;
-                }
-            }
+function renderSpeedDials() {
+  const grid = document.getElementById('sd-grid');
+  grid.innerHTML = '';
+  [...SPEED_DIALS, ...bookmarks.filter(b => b.pinned)].forEach(sd => {
+    const el = document.createElement('div');
+    el.className = 'sd-tile';
+    const domain = sd.domain || (function(){ try { return new URL(sd.url).hostname; } catch { return ''; } })();
+    el.innerHTML = `<div class="sd-tile-icon">${faviconImg(domain, 40)}</div><div class="sd-tile-name">${escHtml(sd.name)}</div>`;
+    el.onclick = () => navigate(sd.url);
+    grid.appendChild(el);
+  });
+  const add = document.createElement('div');
+  add.className = 'sd-tile sd-tile-add';
+  add.innerHTML = `<div class="sd-tile-icon"><span class="plus-icon">+</span></div><div class="sd-tile-name" style="color:var(--text3)">Add site</div>`;
+  add.onclick = () => { const u = prompt('Enter URL:'); if (u) navigate(u); };
+  grid.appendChild(add);
+}
+renderSpeedDials();
 
-            start() {
-                if (this.running) return;
-                this.running = true;
-                this.updateStatus('Crawler starting...');
-                this.engine.loadFromStorage();
-                this.step();
-            }
+function renderRecentGrid() {
+  const sec = document.getElementById('sd-recent-section');
+  const grid = document.getElementById('sd-recent-grid');
+  const seen = new Map();
+  history2.slice(0, 40).forEach(h => { try { const host = new URL(h.url).hostname; if (!seen.has(host)) seen.set(host, h); } catch {} });
+  const recent = [...seen.values()].slice(0, 8);
+  if (!recent.length) { sec.style.display = 'none'; return; }
+  sec.style.display = 'block';
+  grid.innerHTML = '';
+  recent.forEach(h => {
+    const el = document.createElement('div');
+    el.className = 'sd-tile';
+    let host = '';
+    try { host = new URL(h.url).hostname.replace('www.', ''); } catch {}
+    el.innerHTML = `<div class="sd-tile-icon">${faviconImg(host, 40)}</div><div class="sd-tile-name">${escHtml(host)}</div>`;
+    el.onclick = () => navigate(h.url);
+    grid.appendChild(el);
+  });
+}
 
-            stop() {
-                this.running = false;
-                this.saveState();
-                this.updateStatus(`Crawling stopped. ${this.crawledCount} pages indexed.`);
-                setTimeout(() => {
-                    const el = document.getElementById('crawl-status');
-                    if (el) el.style.display = 'none';
-                }, 5000);
-            }
-        }
+let tabIdCounter = 0;
+function genId() { return 't' + (++tabIdCounter) + '_' + Date.now(); }
 
-        const engine = window._searchEngine;
-        const crawler = new BrowserCrawler(engine);
+function createTab(title, url, activate) {
+  if (activate === undefined) activate = true;
+  const id = genId();
+  const tab = { id, title: title || 'New Tab', url: url || '', favicon: null };
+  tabs.push(tab);
+  if (activate) activeTabId = id;
+  renderTabs();
+  if (activate && url) navigate(url, id);
+  else if (activate) showSpeedDial();
+  return id;
+}
 
-        document.getElementById('start-crawl-btn').addEventListener('click', () => {
-            if (crawler.running) {
-                crawler.stop();
-                document.getElementById('start-crawl-btn').textContent = 'Start Crawling';
-            } else {
-                crawler.start();
-                document.getElementById('start-crawl-btn').textContent = 'Stop Crawling';
-            }
-        });
+function closeTab(id) {
+  if (tabs.length <= 1) return;
+  const idx = tabs.findIndex(t => t.id === id);
+  if (idx < 0) return;
+  closedStack.push(tabs[idx]);
+  tabs.splice(idx, 1);
+  if (activeTabId === id) {
+    const t = tabs[Math.min(idx, tabs.length - 1)];
+    activeTabId = t.id;
+    if (t.url) navigate(t.url, t.id, false);
+    else showSpeedDial();
+  }
+  renderTabs();
+}
 
-        if (engine.N === 0) {
-            document.getElementById('start-crawl-btn').textContent = 'Start Crawling (empty index)';
-        }
+function switchTab(id) {
+  if (activeTabId === id) return;
+  activeTabId = id;
+  const tab = tabs.find(t => t.id === id);
+  renderTabs();
+  if (tab) {
+    if (tab.url) navigate(tab.url, id, false);
+    else showSpeedDial();
+  }
+}
 
-        let settings = {
-            searchEngine: 'self',
-            customSearchUrl: '',
-            proxyMode: 'none',
-            externalProxyUrl: '',
-            homepage: 'https://duckduckgo.com',
-            theme: 'light',
-            newtabFocus: true
-        };
+function getActiveTab() { return tabs.find(t => t.id === activeTabId); }
 
-        try {
-            const saved = localStorage.getItem('serfx_settings');
-            if (saved) settings = { ...settings, ...JSON.parse(saved) };
-        } catch (e) {}
+function renderTabs() {
+  const container = document.getElementById('tabs');
+  container.innerHTML = '';
+  tabs.forEach(tab => {
+    const el = document.createElement('div');
+    el.className = 'tab' + (tab.id === activeTabId ? ' active' : '');
+    let faviconHtml = '<div class="fav-fallback"></div>';
+    if (tab.favicon) {
+      faviconHtml = `<img src="${tab.favicon}" onerror="this.style.display='none'">`;
+    }
+    el.innerHTML = `<div class="tab-favicon">${faviconHtml}</div><div class="tab-title">${escHtml(tab.title)}</div><div class="tab-close" onclick="event.stopPropagation();closeTab('${tab.id}')">×</div>`;
+    el.querySelector('.tab-title').onclick = () => switchTab(tab.id);
+    container.appendChild(el);
+  });
+  const active = getActiveTab();
+  if (active) urlInput.value = active.url || '';
+}
 
-        function saveSettings() {
-            localStorage.setItem('serfx_settings', JSON.stringify(settings));
-        }
+function isUrl(s) {
+  return /^https?:\/\//i.test(s) || (s.includes('.') && !s.includes(' ') && s.length < 200 && !s.includes('\n'));
+}
 
-        if (settings.theme === 'dark') document.body.classList.add('dark');
+function navigate(raw, tabId, push) {
+  if (push === undefined) push = true;
+  if (!raw || !raw.trim()) { showSpeedDial(); return; }
+  const tab = tabs.find(t => t.id === (tabId || activeTabId));
+  if (!tab) return;
+  activeTabId = tab.id;
+  const url = raw.trim();
 
-        function escapeHtml(text) {
-            return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        }
+  if (!isUrl(url)) {
+    tab.url = url;
+    tab.title = 'Search: ' + url;
+    urlInput.value = url;
+    renderTabs();
+    const results = searchLocal(url);
+    if (results.results.length > 0) {
+      showResultsPanel(url, results);
+    } else if (cfg.fallback && cfg.fallback !== 'none' && FALLBACK_URLS[cfg.fallback]) {
+      const fbUrl = FALLBACK_URLS[cfg.fallback].replace('%s', encodeURIComponent(url));
+      tab.url = fbUrl;
+      openUrl(fbUrl, tab, push);
+    } else {
+      showResultsPanel(url, results);
+    }
+    return;
+  }
 
-        class Tab {
-            constructor(id, title, url) {
-                this.id = id; this.title = title || 'New Tab'; this.url = url || '';
-            }
-        }
+  const fullUrl = /^https?:\/\//i.test(url) ? url : 'https://' + url;
+  openUrl(fullUrl, tab, push);
+}
 
-        let tabs = [];
-        let activeTabId = null;
-        let closedTabs = [];
-        const tabsDiv = document.getElementById('tabs');
-        const urlInput = document.getElementById('url-input');
-        const frame = document.getElementById('content-frame');
-        const resultsPanel = document.getElementById('results-panel');
-        const newTabBtn = document.getElementById('new-tab-btn');
-        const findBar = document.getElementById('find-bar');
-        const findInput = document.getElementById('find-input');
+function openUrl(url, tab, push) {
+  if (push === undefined) push = true;
+  tab.url = url;
+  try { tab.title = new URL(url).hostname.replace('www.', ''); } catch { tab.title = url; }
+  try { tab.favicon = faviconUrl(new URL(url).hostname); } catch {}
+  renderTabs();
+  urlInput.value = url;
+  hideSpeedDial();
+  resultsPanel.style.display = 'none';
+  if (push) addHistory(url, tab.title);
 
-        function genId() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 5); }
-        function renderTabs() {
-            tabsDiv.innerHTML = '';
-            tabs.forEach(tab => {
-                const div = document.createElement('div');
-                div.className = 'tab' + (tab.id === activeTabId ? ' active' : '');
-                div.innerHTML = `<span class="tab-title">${escapeHtml(tab.title)}</span><span class="close-tab">&times;</span>`;
-                div.querySelector('.tab-title').onclick = () => switchToTab(tab.id);
-                div.querySelector('.close-tab').onclick = (e) => { e.stopPropagation(); closeTab(tab.id); };
-                tabsDiv.appendChild(div);
-            });
-            const active = getActiveTab();
-            if (active) urlInput.value = active.url || '';
-        }
-        function getActiveTab() { return tabs.find(t => t.id === activeTabId); }
-        function showResults() { resultsPanel.style.display = 'block'; frame.style.display = 'none'; }
-        function hideResults() { resultsPanel.style.display = 'none'; frame.style.display = ''; }
-        function isUrl(str) { return /^https?:\/\//i.test(str) || (str.includes('.') && !str.includes(' ')); }
+  if (cfg.proxy === 'none') {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    showSpeedDial();
+    return;
+  }
+  const proxyUrl = cfg.proxy === 'external' && cfg.proxyUrl
+    ? cfg.proxyUrl + encodeURIComponent(url)
+    : '/proxy?url=' + encodeURIComponent(url);
+  frame.style.display = '';
+  frame.src = proxyUrl;
+}
 
-        function buildProxyUrl(target) {
-            if (settings.proxyMode === 'external' && settings.externalProxyUrl) return settings.externalProxyUrl + encodeURIComponent(target);
-            if (settings.proxyMode === 'sw') return '/proxy?url=' + encodeURIComponent(target);
-            return target;
-        }
+const BM25_K1 = 1.5, BM25_B = 0.75;
 
-        function searchLocalIndex(query) {
-            if (!engine || !engine.ready) return { error: 'Index not loaded yet', results: [] };
-            return engine.search(query, { limit: 20 });
-        }
+function tokenize(t) {
+  return t.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(x => x.length > 1);
+}
 
-        async function fetchCustomResults(query) {
-            const url = settings.customSearchUrl.replace('%s', encodeURIComponent(query));
-            try {
-                const resp = await fetch(url);
-                if (!resp.ok) throw new Error('HTTP ' + resp.status);
-                return await resp.json();
-            } catch (e) { return { error: e.message }; }
-        }
+function searchLocal(query) {
+  if (!localIndexReady || !localIndex) return { results: [], indexLoaded: false };
+  const tokens = tokenize(query);
+  if (!tokens.length) return { results: [], indexLoaded: true };
+  const N = localIndex.totalDocs || 1;
+  const avgDL = localIndex.avgDocLen || 100;
+  const candidates = new Set();
+  tokens.forEach(t => { const p = localIndex.index[t]; if (p) Object.keys(p).forEach(id => candidates.add(id)); });
+  const scored = [];
+  for (const docId of candidates) {
+    const doc = localIndex.documents[docId];
+    const docDL = doc.tokenCount || 100;
+    let score = 0;
+    for (const term of tokens) {
+      const postings = localIndex.index[term];
+      if (!postings || !postings[docId]) continue;
+      const df = Object.keys(postings).length;
+      const idf = Math.log((N - df + 0.5) / (df + 0.5) + 1);
+      const tf = postings[docId] * docDL;
+      const norm = (tf * (BM25_K1 + 1)) / (tf + BM25_K1 * (1 - BM25_B + BM25_B * docDL / avgDL));
+      score += idf * norm;
+    }
+    if (score > 0) scored.push({ ...doc, score: Math.round(score * 100) / 100 });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return { results: scored.slice(0, 20), indexLoaded: true };
+}
 
-        function displaySearchResults(data) {
-            showResults();
-            if (data.error) { resultsPanel.innerHTML = `<div class="message-placeholder">Error: ${escapeHtml(data.error)}</div>`; return; }
-            const results = data.results || [];
-            if (!results.length) { resultsPanel.innerHTML = '<div class="message-placeholder">No results found. Try crawling first.</div>'; return; }
-            let html = `<p style="color:var(--text2); font-size:14px; margin-bottom:16px;">Results from ${escapeHtml(data.engine)}</p>`;
-            results.forEach(r => {
-                html += `
-                    <div class="result-item">
-                        <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener">${escapeHtml(r.title)}</a>
-                        <div class="cite">${escapeHtml(r.url)}</div>
-                        <div class="snippet">${escapeHtml(r.snippet || (r.text ? r.text.substring(0, 200) : ''))}</div>
-                        <div style="color:var(--text2); font-size:12px;">Score: ${r.score || ''}</div>
-                    </div>`;
-            });
-            resultsPanel.innerHTML = html;
-        }
+function showResultsPanel(query, data) {
+  hideSpeedDial();
+  frame.style.display = 'none';
+  resultsPanel.style.display = 'block';
 
-        async function navigate(rawUrl) {
-            if (!rawUrl) return;
-            const active = getActiveTab();
-            if (!active) return;
-            let url = rawUrl.trim();
-            if (!isUrl(url)) {
-                active.url = url; active.title = url; urlInput.value = url; renderTabs();
-                hideResults();
-                resultsPanel.innerHTML = '<div class="message-placeholder">Searching...</div>';
-                showResults();
-                let data;
-                if (settings.searchEngine === 'custom' && settings.customSearchUrl) data = await fetchCustomResults(url);
-                else data = searchLocalIndex(url);
-                displaySearchResults(data);
-                return;
-            }
-            if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-            active.url = url; active.title = url.replace(/^https?:\/\//, '').split('/')[0];
-            renderTabs(); urlInput.value = url; hideResults();
-            if (settings.proxyMode === 'none') { window.open(url, '_blank', 'noopener,noreferrer'); return; }
-            frame.src = buildProxyUrl(url);
-        }
+  if (!data.indexLoaded) {
+    resultsPanel.innerHTML = `<div class="res-empty"><strong>Index not loaded</strong>Run the crawler to build your search index, then deploy search-index.json.</div>`;
+    return;
+  }
 
-        urlInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { navigate(e.target.value.trim()); } });
-        document.getElementById('bookmarkBar').addEventListener('click', (e) => { if (e.target.classList.contains('bookmark-btn')) navigate(e.target.dataset.url); });
-        document.getElementById('back-btn').addEventListener('click', () => { if (frame.contentWindow) frame.contentWindow.history.back(); });
-        document.getElementById('fwd-btn').addEventListener('click', () => { if (frame.contentWindow) frame.contentWindow.history.forward(); });
-        document.getElementById('reload-btn').addEventListener('click', () => { frame.src = frame.src; });
-        newTabBtn.addEventListener('click', () => { createTab('New Tab', settings.homepage); });
+  let html = `<div class="res-header">${data.results.length} result${data.results.length !== 1 ? 's' : ''} in your index</div>`;
+  html += `<div class="res-query">${escHtml(query)}</div>`;
 
-        function createTab(title, url) {
-            const id = genId();
-            tabs.push(new Tab(id, title, url));
-            if (tabs.length === 1) activeTabId = id;
-            renderTabs();
-            if (url) navigate(url);
-            return id;
-        }
-        function closeTab(id) {
-            if (tabs.length <= 1) return;
-            const idx = tabs.findIndex(t => t.id === id);
-            if (idx === -1) return;
-            closedTabs.push(tabs.splice(idx, 1)[0]);
-            if (activeTabId === id) activeTabId = tabs[Math.min(idx, tabs.length - 1)]?.id || null;
-            renderTabs();
-        }
-        function switchToTab(id) {
-            if (activeTabId === id) return;
-            const tab = tabs.find(t => t.id === id);
-            if (!tab) return;
-            activeTabId = id;
-            renderTabs();
-            navigate(tab.url);
-        }
+  if (!data.results.length) {
+    html += `<div class="res-empty"><strong>No results found</strong>Try different keywords, or add more pages to your index by running the crawler.</div>`;
+  } else {
+    data.results.forEach(r => {
+      let domain = '';
+      try { domain = new URL(r.url).hostname; } catch {}
+      const snippet = buildSnippet(r.text || '', tokenize(query));
+      html += `<div class="res-item">
+        <a class="res-title" href="${escHtml(r.url)}" target="_blank" rel="noopener">${escHtml(r.title || r.url)}</a>
+        <div class="res-url" style="display:flex;align-items:center;gap:6px">
+          <img src="${faviconUrl(domain)}" width="12" height="12" style="border-radius:2px;flex-shrink:0">
+          ${escHtml(r.url)}
+        </div>
+        <div class="res-snippet">${escHtml(snippet)}</div>
+        <div class="res-score">score ${r.score} · ${escHtml(domain)}</div>
+      </div>`;
+    });
+  }
+  resultsPanel.innerHTML = html;
+}
 
-        document.getElementById('settings-btn').addEventListener('click', () => document.getElementById('settings-panel').classList.toggle('show'));
-        document.getElementById('close-settings').addEventListener('click', () => document.getElementById('settings-panel').classList.remove('show'));
+function buildSnippet(text, tokens, max) {
+  if (max === undefined) max = 240;
+  if (!text) return '';
+  const lower = text.toLowerCase();
+  let best = 0;
+  for (const term of tokens) { const i = lower.indexOf(term); if (i !== -1) { best = Math.max(0, i - 60); break; } }
+  const raw = text.slice(best, best + max);
+  return (best > 0 ? '…' : '') + raw + (raw.length === max ? '…' : '');
+}
 
-        document.addEventListener('keydown', (e) => {
-            if (!e.ctrlKey) return;
-            if (e.key === 't') { e.preventDefault(); newTabBtn.click(); }
-            else if (e.key === 'w') { e.preventDefault(); const a = getActiveTab(); if (a) closeTab(a.id); }
-            else if (e.key === 'l' || e.key === 'k') { e.preventDefault(); urlInput.select(); urlInput.focus(); }
-            else if (e.key === 'f') { e.preventDefault(); findBar.style.display = 'flex'; findInput.focus(); }
-            else if (e.key === 'r') { e.preventDefault(); e.shiftKey ? (frame.src = frame.src) : document.getElementById('reload-btn').click(); }
-        });
+function showSpeedDial() {
+  frame.style.display = 'none';
+  resultsPanel.style.display = 'none';
+  speedDial.classList.add('visible');
+  renderRecentGrid();
+  if (cfg.newtabFocus) setTimeout(() => document.getElementById('sd-search-input').focus(), 50);
+}
+function hideSpeedDial() { speedDial.classList.remove('visible'); }
 
-        document.getElementById('find-close').addEventListener('click', () => { findBar.style.display = 'none'; });
+function doSpeedSearch() {
+  const q = document.getElementById('sd-search-input').value.trim();
+  if (!q) return;
+  document.getElementById('sd-search-input').value = '';
+  navigate(q);
+}
 
-        createTab('New Tab', settings.homepage);
-        activeTabId = tabs[0].id;
-        renderTabs();
-        navigate(settings.homepage);
-    </script>
+function addHistory(url, title) {
+  history2.unshift({ url, title, time: Date.now() });
+  if (history2.length > 500) history2.length = 500;
+  try { localStorage.setItem('serfx_hist', JSON.stringify(history2)); } catch {}
+  renderHistPanel();
+}
+
+function renderHistPanel() {
+  const list = document.getElementById('hist-list');
+  if (!history2.length) { list.innerHTML = '<div style="color:var(--text3);padding:20px;text-align:center;font-size:13px">No history yet</div>'; return; }
+  list.innerHTML = history2.slice(0, 100).map(h => {
+    let domain = '';
+    try { domain = new URL(h.url).hostname; } catch {}
+    return `<div class="panel-item" onclick="navigate('${escHtml(h.url)}');closeAllPanels()">
+      <div class="panel-item-favicon"><img src="${faviconUrl(domain)}" width="16" height="16" onerror="this.style.display='none'"></div>
+      <div class="panel-item-text">
+        <div class="panel-item-title">${escHtml(h.title || h.url)}</div>
+        <div class="panel-item-sub">${timeAgo(new Date(h.time))} · ${escHtml(domain)}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+renderHistPanel();
+
+function renderBmPanel() {
+  const list = document.getElementById('bm-list');
+  if (!bookmarks.length) { list.innerHTML = '<div style="color:var(--text3);padding:20px;text-align:center;font-size:13px">No bookmarks yet</div>'; return; }
+  list.innerHTML = bookmarks.map((b, i) => {
+    let domain = '';
+    try { domain = new URL(b.url).hostname; } catch {}
+    return `<div class="panel-item">
+      <div class="panel-item-favicon"><img src="${faviconUrl(domain)}" width="16" height="16" onerror="this.style.display='none'"></div>
+      <div class="panel-item-text" onclick="navigate('${escHtml(b.url)}');closeAllPanels()" style="cursor:pointer">
+        <div class="panel-item-title">${escHtml(b.title)}</div>
+        <div class="panel-item-sub">${escHtml(domain)}</div>
+      </div>
+      <button onclick="removeBookmark(${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:4px;border-radius:4px;font-size:15px">×</button>
+    </div>`;
+  }).join('');
+}
+renderBmPanel();
+
+document.getElementById('bm-add-btn').addEventListener('click', () => {
+  const tab = getActiveTab();
+  if (!tab || !tab.url || /^(about:|$)/.test(tab.url)) return;
+  if (!bookmarks.find(b => b.url === tab.url)) {
+    bookmarks.unshift({ title: tab.title || tab.url, url: tab.url });
+    try { localStorage.setItem('serfx_bm', JSON.stringify(bookmarks)); } catch {}
+    renderBmPanel();
+    renderSpeedDials();
+  }
+});
+
+function removeBookmark(i) {
+  bookmarks.splice(i, 1);
+  try { localStorage.setItem('serfx_bm', JSON.stringify(bookmarks)); } catch {}
+  renderBmPanel();
+  renderSpeedDials();
+}
+
+function togglePanel(id) {
+  const overlay = document.getElementById('panel-overlay');
+  const panel = document.getElementById(id);
+  const isOpen = panel.classList.contains('open');
+  closeAllPanels();
+  if (!isOpen) { overlay.classList.add('open'); panel.classList.add('open'); }
+}
+function closeAllPanels() {
+  document.getElementById('panel-overlay').classList.remove('open');
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('open'));
+}
+
+document.getElementById('s-proxy').value = cfg.proxy;
+document.getElementById('s-proxy-url').value = cfg.proxyUrl;
+document.getElementById('s-fallback').value = cfg.fallback;
+document.getElementById('s-proxy-url-wrap').style.display = cfg.proxy === 'external' ? 'block' : 'none';
+if (!cfg.newtabFocus) document.getElementById('t-newtab').classList.remove('on');
+
+document.getElementById('s-proxy').addEventListener('change', function() {
+  cfg.proxy = this.value;
+  document.getElementById('s-proxy-url-wrap').style.display = this.value === 'external' ? 'block' : 'none';
+  saveCfg();
+});
+document.getElementById('s-proxy-url').addEventListener('input', function() { cfg.proxyUrl = this.value; saveCfg(); });
+document.getElementById('s-fallback').addEventListener('change', function() { cfg.fallback = this.value; saveCfg(); });
+
+urlInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { navigate(urlInput.value.trim()); urlInput.blur(); }
+});
+urlInput.addEventListener('focus', () => { urlInput.select(); });
+document.getElementById('url-clear').addEventListener('click', () => { urlInput.value = ''; urlInput.focus(); });
+document.getElementById('sd-search-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSpeedSearch(); });
+
+document.getElementById('back-btn').addEventListener('click', () => { try { frame.contentWindow.history.back(); } catch {} });
+document.getElementById('fwd-btn').addEventListener('click', () => { try { frame.contentWindow.history.forward(); } catch {} });
+document.getElementById('reload-btn').addEventListener('click', () => { if (frame.src && frame.src !== location.href) frame.src = frame.src; });
+document.getElementById('new-tab-btn').addEventListener('click', () => { createTab('New Tab', ''); });
+
+document.getElementById('find-open-btn').addEventListener('click', () => {
+  const fb = document.getElementById('find-bar');
+  fb.style.display = fb.style.display === 'flex' ? 'none' : 'flex';
+  if (fb.style.display === 'flex') document.getElementById('find-input').focus();
+});
+function closeFindBar() { document.getElementById('find-bar').style.display = 'none'; }
+function findNext() {}
+function findPrev() {}
+
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey) {
+    if (e.key === 't') { e.preventDefault(); createTab('New Tab', ''); }
+    else if (e.key === 'w') { e.preventDefault(); const t = getActiveTab(); if (t) closeTab(t.id); }
+    else if (e.shiftKey && e.key === 'T') { e.preventDefault(); if (closedStack.length) { const t = closedStack.pop(); tabs.push(t); activeTabId = t.id; renderTabs(); if (t.url) navigate(t.url, t.id, false); else showSpeedDial(); } }
+    else if (e.key === 'l' || e.key === 'k') { e.preventDefault(); urlInput.focus(); urlInput.select(); }
+    else if (e.key === 'f') { e.preventDefault(); document.getElementById('find-open-btn').click(); }
+    else if (e.key === 'r') { e.preventDefault(); document.getElementById('reload-btn').click(); }
+    else if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomLevel = Math.min(2, zoomLevel + 0.1); frame.style.zoom = zoomLevel; document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%'; }
+    else if (e.key === '-') { e.preventDefault(); zoomLevel = Math.max(0.5, zoomLevel - 0.1); frame.style.zoom = zoomLevel; document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%'; }
+    else if (e.key === '0') { e.preventDefault(); zoomLevel = 1; frame.style.zoom = 1; document.getElementById('zoom-display').textContent = '100%'; }
+    else if (e.key === 'Tab') { e.preventDefault(); const idx = tabs.findIndex(t => t.id === activeTabId); const next = tabs[e.shiftKey ? (idx <= 0 ? tabs.length - 1 : idx - 1) : (idx >= tabs.length - 1 ? 0 : idx + 1)]; if (next) switchTab(next.id); }
+  }
+  if (e.key === 'Escape') { closeFindBar(); closeAllPanels(); }
+});
+
+document.addEventListener('mouseover', e => {
+  const a = e.target.closest('a[href]');
+  document.getElementById('status-url').textContent = a ? a.href : '';
+});
+
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function timeAgo(d) {
+  const s = Math.floor((Date.now() - d) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  return Math.floor(s/86400) + 'd ago';
+}
+
+createTab('New Tab', '');
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
 </body>
 </html>
